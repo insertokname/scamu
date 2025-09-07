@@ -1,39 +1,151 @@
-use minifb::{Key, Window, WindowOptions};
-use std::time::Instant;
+use std::num::NonZeroU32;
+use std::rc::Rc;
+use std::time::{Duration, Instant};
+use winit::application::ApplicationHandler;
+use winit::event::WindowEvent;
+use winit::event_loop::{ActiveEventLoop, EventLoop};
+use winit::window::{Window, WindowId};
 
 const WIDTH: usize = 640;
 const HEIGHT: usize = 480;
+const TARGET_FPS: u64 = 240;
+const FRAME_TIME: Duration = Duration::from_nanos(1_000_000_000u64 / TARGET_FPS);
+
+type Surface = softbuffer::Surface<Rc<Window>, Rc<Window>>;
+
+struct App {
+    window: Option<Rc<Window>>,
+    surface: Option<Surface>,
+    start_time: Instant,
+    last_frame_time: Instant,
+    frame_count: u32,
+    fps_timer: Instant,
+}
+
+impl ApplicationHandler for App {
+    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+        let window = Rc::new(
+            event_loop
+                .create_window(
+                    Window::default_attributes()
+                        .with_title("SCAM")
+                        .with_inner_size(winit::dpi::LogicalSize::new(WIDTH as f64, HEIGHT as f64)),
+                )
+                .unwrap(),
+        );
+
+        let context = softbuffer::Context::new(window.clone()).unwrap();
+        let surface = softbuffer::Surface::new(&context, window.clone()).unwrap();
+
+        self.window = Some(window);
+        self.surface = Some(surface);
+
+        let now = Instant::now();
+        self.last_frame_time = now;
+        self.fps_timer = now;
+
+        if let Some(window) = &self.window {
+            window.request_redraw();
+        }
+    }
+
+    fn window_event(
+        &mut self,
+        event_loop: &ActiveEventLoop,
+        window_id: WindowId,
+        event: WindowEvent,
+    ) {
+        let window = match &self.window {
+            Some(window) if window.id() == window_id => window,
+            _ => return,
+        };
+
+        match event {
+            WindowEvent::CloseRequested => {
+                event_loop.exit();
+            }
+            WindowEvent::Resized(size) => {
+                if let Some(surface) = &mut self.surface {
+                    if let (Some(width), Some(height)) =
+                        (NonZeroU32::new(size.width), NonZeroU32::new(size.height))
+                    {
+                        surface.resize(width, height).unwrap();
+                    }
+                }
+                window.request_redraw();
+            }
+            WindowEvent::RedrawRequested => {
+                let frame_start = Instant::now();
+                let delta = frame_start.saturating_duration_since(self.last_frame_time);
+
+                if let Some(surface) = &mut self.surface {
+                    let size = window.inner_size();
+                    if let (Some(_), Some(_)) =
+                        (NonZeroU32::new(size.width), NonZeroU32::new(size.height))
+                    {
+                        let time = self.start_time.elapsed().as_secs_f32();
+                        let red = ((time.sin() * 0.5 + 0.5) * 255.0) as u32;
+                        let green = (((time + 2.094).sin() * 0.5 + 0.5) * 255.0) as u32;
+                        let blue = (((time + 4.188).sin() * 0.5 + 0.5) * 255.0) as u32;
+                        let color = (red << 16) | (green << 8) | blue;
+
+                        if let Ok(mut buffer) = surface.buffer_mut() {
+                            buffer.fill(color);
+                            let _ = buffer.present();
+                        }
+                    }
+                }
+
+                let scheduled_next_start = self.last_frame_time + FRAME_TIME;
+                if frame_start < scheduled_next_start {
+                    let remaining = scheduled_next_start - frame_start;
+
+                    if remaining > Duration::from_micros(500) {
+                        let coarse = remaining - Duration::from_micros(200);
+                        std::thread::sleep(coarse);
+                    }
+                    while Instant::now() < scheduled_next_start {
+                        std::hint::spin_loop();
+                    }
+                    self.last_frame_time = scheduled_next_start;
+                } else {
+                    self.last_frame_time = frame_start;
+                }
+
+                self.frame_count += 1;
+                let now_stats = Instant::now();
+                if now_stats.duration_since(self.fps_timer) >= Duration::from_secs(1) {
+                    let avg_ms = (now_stats - self.fps_timer).as_secs_f64() * 1000.0
+                        / self.frame_count as f64;
+                    println!(
+                        "FPS: {} | avg frame {:.3} ms | last delta {:.3} ms",
+                        self.frame_count,
+                        avg_ms,
+                        delta.as_secs_f64() * 1000.0
+                    );
+                    self.frame_count = 0;
+                    self.fps_timer = now_stats;
+                }
+
+                window.request_redraw();
+            }
+            _ => {}
+        }
+    }
+}
 
 fn main() {
-    let mut buffer: Vec<u32> = vec![0; WIDTH * HEIGHT];
+    let event_loop = EventLoop::new().unwrap();
 
-    let window_options = WindowOptions {
-        resize: true,
-        scale_mode: minifb::ScaleMode::Stretch,
-        ..WindowOptions::default()
+    let now = Instant::now();
+    let mut app = App {
+        window: None,
+        surface: None,
+        start_time: now,
+        last_frame_time: now,
+        frame_count: 0,
+        fps_timer: now,
     };
 
-    let mut window = Window::new("SCAM", WIDTH, HEIGHT, window_options).unwrap_or_else(|e| {
-        panic!("{}", e);
-    });
-
-    window.set_target_fps(60);
-
-    let start_time = Instant::now();
-
-    while window.is_open() && !window.is_key_down(Key::Escape) {
-        let time = start_time.elapsed().as_secs_f32();
-
-        let red = ((time.sin() * 0.5 + 0.5) * 255.0) as u32;
-        let green = (((time + 2.094).sin() * 0.5 + 0.5) * 255.0) as u32;
-        let blue = (((time + 4.188).sin() * 0.5 + 0.5) * 255.0) as u32;
-
-        let color = (red << 16) | (green << 8) | blue;
-
-        for i in 0..buffer.len() {
-            buffer[i] = color;
-        }
-
-        window.update_with_buffer(&buffer, WIDTH, HEIGHT).unwrap();
-    }
+    event_loop.run_app(&mut app).unwrap();
 }
