@@ -1,0 +1,1 @@
+pub const BUS_SIZE: usize = 2 ^ 16;
