@@ -1,4 +1,8 @@
-[workspace]
+[package]
+name = "scamu"
+version = "0.1.0"
+edition = "2024"
 
-members = [ "scam","scam_core"]
-resolver = "2"
+[lib]
+name = "scamu"
+crate-type = ["staticlib", "dylib"]
