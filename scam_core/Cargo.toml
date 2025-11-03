@@ -4,5 +4,5 @@ version = "0.1.0"
 edition = "2024"
 
 [lib]
-name = "scam"
-crate-type = ["staticlib"]
+name = "scam_core"
+crate-type = ["staticlib", "dylib"]

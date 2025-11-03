@@ -135,17 +135,36 @@ impl ApplicationHandler for App {
 }
 
 fn main() {
-    let event_loop = EventLoop::new().unwrap();
+    // let event_loop = EventLoop::new().unwrap();
 
-    let now = Instant::now();
-    let mut app = App {
-        window: None,
-        surface: None,
-        start_time: now,
-        last_frame_time: now,
-        frame_count: 0,
-        fps_timer: now,
-    };
+    // let now = Instant::now();
+    // let mut app = App {
+    //     window: None,
+    //     surface: None,
+    //     start_time: now,
+    //     last_frame_time: now,
+    //     frame_count: 0,
+    //     fps_timer: now,
+    // };
 
-    event_loop.run_app(&mut app).unwrap();
+    // event_loop.run_app(&mut app).unwrap();
+
+    // println!("{}", 1 << 6 == 0x60)
+    let mut nes = scam_core::device::nes::Nes::new();
+    nes.write_memory(
+        0x8000,
+        &[
+            0xA9, 0x00, 0x85, 0x00, 0xA9, 0x01, 0x85, 0x01, 0xA2, 0x00, 0xB5, 0x00, 0x18, 0x75,
+            0x01, 0x95, 0x02, 0xE8, 0x90, 0xF6, 0xE8,
+        ],
+    );
+
+    nes.write_memory(0xFFFC, &[0x00, 0x80]);
+
+    nes.reset();
+
+
+    loop {
+        nes.tick();
+    }
 }

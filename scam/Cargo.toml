@@ -6,3 +6,4 @@ edition = "2024"
 [dependencies]
 softbuffer = "0.4"
 winit = "0.30"
+scam_core = { path = "../scam_core" }
