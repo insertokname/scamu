@@ -1,8 +1,8 @@
 use crate::hardware::{bus::Bus, constants, cpu::instructions::INSTRUCTIONS_LOOKUP};
 
-pub mod addressing_modes;
-pub mod instructions;
-pub mod operations;
+mod addressing_modes;
+mod instructions;
+mod operations;
 
 pub struct Cpu {
     accumulator: u8,
