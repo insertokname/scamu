@@ -78,7 +78,7 @@ impl Cpu {
         } else {
             let instruction_location = self.program_counter;
             let instruction_code = bus.read(self.program_counter);
-            
+
             self.program_counter += 1;
 
             let mut next_instruction =
@@ -86,7 +86,7 @@ impl Cpu {
 
             println!(
                 "Exectuing instruction {} at address {:#X}",
-                next_instruction.dissassemble_instruction(self, bus),
+                next_instruction.dissassemble_instruction(),
                 instruction_location
             );
 

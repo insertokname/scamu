@@ -3,7 +3,7 @@ use crate::hardware::{
     constants::cpu_flags::*,
     cpu::{
         Cpu,
-        addressing_modes::{AddressingMode, JumpAddress},
+        addressing_modes::{AddressingMode, implementations::JumpAddress},
     },
 };
 

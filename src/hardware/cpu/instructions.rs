@@ -2,7 +2,11 @@ use std::{fmt::Debug, sync::LazyLock};
 
 use crate::hardware::{
     bus::Bus,
-    cpu::{Cpu, addressing_modes::*, operations::*},
+    cpu::{
+        Cpu,
+        addressing_modes::{AddressingMode, factories::*},
+        operations::*,
+    },
 };
 
 pub(super) struct InstructionFactory<T> {
@@ -43,7 +47,7 @@ pub(super) trait InstructionTrait {
     fn execute(&mut self, cpu: &mut Cpu, bus: &mut Bus) -> u8;
     /// # Returns:
     /// The dissassembled version of the instruction in string slice
-    fn dissassemble_instruction(&self, cpu: &mut Cpu, bus: &mut Bus) -> String;
+    fn dissassemble_instruction(&self) -> String;
 }
 
 impl<T: Debug> InstructionTrait for Instruction<T> {
@@ -51,12 +55,8 @@ impl<T: Debug> InstructionTrait for Instruction<T> {
         (self.operation)(cpu, bus, &mut self.addressing_mode);
         return self.cycles + self.addressing_mode.additional_cycles_required();
     }
-    fn dissassemble_instruction(&self, cpu: &mut Cpu, bus: &mut Bus) -> String {
-        format!(
-            "{} {:#?}",
-            self.operation_name,
-            self.addressing_mode.read(cpu, bus)
-        )
+    fn dissassemble_instruction(&self) -> String {
+        format!("{} {}", self.operation_name, self.addressing_mode.display())
     }
 }
 

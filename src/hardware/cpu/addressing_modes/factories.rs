@@ -1,164 +1,38 @@
-use std::fmt::Debug;
+//! # Factories
+//!
+//! This module is responsible for creating simple helpers that return
+//! an [super::AddressingMode]. They are used in the
+//! [lookup table](crate::hardware::cpu::instructions::).
+use crate::hardware::{
+    bus::Bus,
+    cpu::{Cpu, addressing_modes::AddressingMode},
+};
 
-use crate::hardware::{bus::Bus, cpu::Cpu};
+use super::implementations::*;
 
-pub(super) trait AddressingMode<T: Debug> {
-    fn additional_cycles_required(&self) -> u8;
-    fn requires_another_cycle(&mut self);
-    fn read(&self, cpu: &Cpu, bus: &Bus) -> T;
-    fn write(&mut self, new_value: T, cpu: &mut Cpu, bus: &mut Bus);
+fn format_hex_u8(value: u8) -> String {
+    format!("${value:02x}")
 }
 
-pub(super) type AddressingModeFactory<T> =
-    fn(cpu: &mut Cpu, bus: &mut Bus) -> Box<dyn AddressingMode<T>>;
-
-struct ImplicitAddressingMode {
-    additional_cycles_required: u8,
-}
-
-impl AddressingMode<()> for ImplicitAddressingMode {
-    fn additional_cycles_required(&self) -> u8 {
-        self.additional_cycles_required
-    }
-
-    fn requires_another_cycle(&mut self) {
-        self.additional_cycles_required += 1
-    }
-
-    fn read(&self, _: &Cpu, _: &Bus) -> () {
-        ()
-    }
-
-    fn write(&mut self, _: (), _: &mut Cpu, _: &mut Bus) {}
-}
-
-struct AccumulatorAddressingMode {
-    additional_cycles_required: u8,
-}
-
-impl AddressingMode<u8> for AccumulatorAddressingMode {
-    fn additional_cycles_required(&self) -> u8 {
-        self.additional_cycles_required
-    }
-
-    fn requires_another_cycle(&mut self) {
-        self.additional_cycles_required += 1
-    }
-
-    fn read(&self, cpu: &Cpu, _: &Bus) -> u8 {
-        cpu.accumulator
-    }
-
-    fn write(&mut self, new_value: u8, cpu: &mut Cpu, _: &mut Bus) {
-        cpu.accumulator = new_value;
+fn format_hex_i8(value: i8) -> String {
+    if value < 0 {
+        format!("-${:02x}", (-value) as u8)
+    } else {
+        format!("${:02x}", value as u8)
     }
 }
 
-struct MemoryAddressingMode {
-    address: u16,
-    additional_cycles_required: u8,
+fn format_hex_u16(value: u16) -> String {
+    format!("${value:04x}")
 }
 
-impl AddressingMode<u8> for MemoryAddressingMode {
-    fn additional_cycles_required(&self) -> u8 {
-        self.additional_cycles_required
-    }
-
-    fn requires_another_cycle(&mut self) {
-        self.additional_cycles_required += 1
-    }
-
-    fn read(&self, _: &Cpu, bus: &Bus) -> u8 {
-        bus.read(self.address)
-    }
-
-    fn write(&mut self, new_value: u8, _: &mut Cpu, bus: &mut Bus) {
-        bus.write(self.address, new_value);
-    }
-}
-
-struct RelativeAddressingMode {
-    address: u16,
-    additional_cycles_required: u8,
-}
-
-impl AddressingMode<i8> for RelativeAddressingMode {
-    fn additional_cycles_required(&self) -> u8 {
-        self.additional_cycles_required
-    }
-
-    fn requires_another_cycle(&mut self) {
-        self.additional_cycles_required += 1
-    }
-
-    fn read(&self, _: &Cpu, bus: &Bus) -> i8 {
-        bus.read(self.address) as i8
-    }
-
-    fn write(&mut self, new_value: i8, _: &mut Cpu, bus: &mut Bus) {
-        bus.write(self.address, new_value as u8);
-    }
-}
-
-/// Gives the user access to both the address and the value at the address
-#[derive(Clone, Copy)]
-pub(super) struct JumpAddress {
-    value: u8,
-    address: u16,
-}
-
-impl Debug for JumpAddress {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.value)
-    }
-}
-
-#[allow(dead_code)]
-impl JumpAddress {
-    pub fn get_value(&self) -> u8 {
-        self.value
-    }
-
-    pub fn set_value(&mut self, new_value: u8) {
-        self.value = new_value
-    }
-
-    pub fn get_address(&self) -> u16 {
-        self.address
-    }
-}
-
-struct JumpingAddressingMode {
-    address: u16,
-    additional_cycles_required: u8,
-}
-
-impl AddressingMode<JumpAddress> for JumpingAddressingMode {
-    fn additional_cycles_required(&self) -> u8 {
-        self.additional_cycles_required
-    }
-
-    fn requires_another_cycle(&mut self) {
-        self.additional_cycles_required += 1
-    }
-    fn read(&self, _: &Cpu, bus: &Bus) -> JumpAddress {
-        JumpAddress {
-            value: bus.read(self.address),
-            address: self.address,
-        }
-    }
-
-    fn write(&mut self, new_value: JumpAddress, _: &mut Cpu, bus: &mut Bus) {
-        bus.write(self.address, new_value.value);
-    }
-}
-
-// pub(super) type AddressingMode<T> = fn(cpu: &mut Cpu, bus: &mut Bus) -> CycleEffect<T>;
+pub(crate) type AddressingModeFactory<T> =
+    fn(cpu: &mut Cpu, bus: &Bus) -> Box<dyn AddressingMode<T>>;
 
 // /// Implicit addressing mode
 // ///
 // /// Instructions using implicit mode do not require a parameter (ex: CLC)
-pub(super) const IMPLICIT: AddressingModeFactory<()> = |_cpu: &mut Cpu, _bus: &mut Bus| {
+pub(crate) const IMPLICIT: AddressingModeFactory<()> = |_: &mut Cpu, _: &Bus| {
     Box::new(ImplicitAddressingMode {
         additional_cycles_required: 0,
     })
@@ -167,25 +41,28 @@ pub(super) const IMPLICIT: AddressingModeFactory<()> = |_cpu: &mut Cpu, _bus: &m
 /// Accumulator addressing mode
 ///
 /// Gets the acculumator as the argument
-// pub(super) const ACCUMULATOR: AddressingMode<&mut u8> =
+// pub(crate) const ACCUMULATOR: AddressingMode<&mut u8> =
 //     |cpu: &mut Cpu, _: &mut Bus| -> CycleEffect<&mut u8> {};
-pub(super) const ACCUMULATOR: AddressingModeFactory<u8> =
-    |_: &mut Cpu, _: &mut Bus| -> Box<dyn AddressingMode<u8>> {
-        Box::new(AccumulatorAddressingMode {
-            additional_cycles_required: 0,
-        })
-    };
+pub(crate) const ACCUMULATOR: AddressingModeFactory<u8> = |_: &mut Cpu, _: &Bus| {
+    Box::new(AccumulatorAddressingMode {
+        additional_cycles_required: 0,
+        display: format!("A"),
+    })
+};
 
 /// Immediate addressing mode
 ///
 /// Gets the next byte as the argument
-pub(super) const IMMEDIATE: AddressingModeFactory<u8> = |cpu: &mut Cpu, _: &mut Bus| {
+pub(crate) const IMMEDIATE: AddressingModeFactory<u8> = |cpu: &mut Cpu, bus: &Bus| {
     let address = cpu.program_counter;
     cpu.program_counter += 1;
+
+    let value = bus.read(address);
 
     Box::new(MemoryAddressingMode {
         address,
         additional_cycles_required: 0,
+        display: format!("#{}", format_hex_u8(value)),
     })
 };
 
@@ -201,13 +78,14 @@ pub(super) const IMMEDIATE: AddressingModeFactory<u8> = |cpu: &mut Cpu, _: &mut 
 ///
 /// Loads the value from memory at address 0x0042 into the accumulator
 /// register.
-pub(super) const ZERO_PAGE: AddressingModeFactory<u8> = |cpu: &mut Cpu, bus: &mut Bus| {
+pub(crate) const ZERO_PAGE: AddressingModeFactory<u8> = |cpu: &mut Cpu, bus: &Bus| {
     let address = bus.read(cpu.program_counter) as u16;
     cpu.program_counter += 1;
 
     Box::new(MemoryAddressingMode {
         address,
         additional_cycles_required: 0,
+        display: format!("{}", format_hex_u8(address as u8),),
     })
 };
 
@@ -224,13 +102,14 @@ pub(super) const ZERO_PAGE: AddressingModeFactory<u8> = |cpu: &mut Cpu, bus: &mu
 ///
 /// Loads the value from memory at address 0x0042 + X into the accumulator
 /// register.
-pub(super) const ZERO_PAGE_X_OFFSET: AddressingModeFactory<u8> = |cpu: &mut Cpu, bus: &mut Bus| {
+pub(crate) const ZERO_PAGE_X_OFFSET: AddressingModeFactory<u8> = |cpu: &mut Cpu, bus: &Bus| {
     let address = bus.read(cpu.program_counter).wrapping_add(cpu.x) as u16;
     cpu.program_counter += 1;
 
     Box::new(MemoryAddressingMode {
         address,
         additional_cycles_required: 0,
+        display: format!("{},x", format_hex_u8(address as u8)),
     })
 };
 
@@ -247,13 +126,14 @@ pub(super) const ZERO_PAGE_X_OFFSET: AddressingModeFactory<u8> = |cpu: &mut Cpu,
 ///
 /// Loads the value from memory at address 0x0042 + Y into the accumulator
 /// register.
-pub(super) const ZERO_PAGE_Y_OFFSET: AddressingModeFactory<u8> = |cpu: &mut Cpu, bus: &mut Bus| {
+pub(crate) const ZERO_PAGE_Y_OFFSET: AddressingModeFactory<u8> = |cpu: &mut Cpu, bus: &Bus| {
     let address = bus.read(cpu.program_counter).wrapping_add(cpu.y) as u16;
     cpu.program_counter += 1;
 
     Box::new(MemoryAddressingMode {
         address,
         additional_cycles_required: 0,
+        display: format!("{},y", format_hex_u8(address as u8)),
     })
 };
 
@@ -267,13 +147,14 @@ pub(super) const ZERO_PAGE_Y_OFFSET: AddressingModeFactory<u8> = |cpu: &mut Cpu,
 /// LDA $1234
 ///
 /// Loads the value from memory at address 0x1234 into the accumulator register.
-pub(super) const ABSOLUTE: AddressingModeFactory<u8> = |cpu: &mut Cpu, bus: &mut Bus| {
+pub(crate) const ABSOLUTE: AddressingModeFactory<u8> = |cpu: &mut Cpu, bus: &Bus| {
     let address = bus.read_u16(cpu.program_counter);
     cpu.program_counter += 2;
 
     Box::new(MemoryAddressingMode {
         address,
         additional_cycles_required: 0,
+        display: format!("{}", format_hex_u16(address)),
     })
 };
 
@@ -281,14 +162,15 @@ pub(super) const ABSOLUTE: AddressingModeFactory<u8> = |cpu: &mut Cpu, bus: &mut
 ///
 ///
 /// Used for jump instructions to allow them to also access the memory location
-pub(super) const ABSOLUTE_JUMPING: AddressingModeFactory<JumpAddress> =
-    |cpu: &mut Cpu, bus: &mut Bus| {
+pub(crate) const ABSOLUTE_JUMPING: AddressingModeFactory<JumpAddress> =
+    |cpu: &mut Cpu, bus: &Bus| {
         let address = bus.read_u16(cpu.program_counter);
         cpu.program_counter += 2;
 
         Box::new(JumpingAddressingMode {
             address,
             additional_cycles_required: 0,
+            display: format!("{}", format_hex_u16(address)),
         })
     };
 
@@ -302,7 +184,7 @@ pub(super) const ABSOLUTE_JUMPING: AddressingModeFactory<JumpAddress> =
 /// LDA $1234, X
 ///
 /// Loads the value from memory at address 0x1234 + X into the accumulator register.
-pub(super) const ABSOLUTE_X_OFFSET: AddressingModeFactory<u8> = |cpu: &mut Cpu, bus: &mut Bus| {
+pub(crate) const ABSOLUTE_X_OFFSET: AddressingModeFactory<u8> = |cpu: &mut Cpu, bus: &Bus| {
     let address = bus.read_u16(cpu.program_counter);
     cpu.program_counter += 2;
     let offset_address = address + cpu.x as u16;
@@ -312,6 +194,7 @@ pub(super) const ABSOLUTE_X_OFFSET: AddressingModeFactory<u8> = |cpu: &mut Cpu, 
     Box::new(MemoryAddressingMode {
         address: offset_address,
         additional_cycles_required: add_cycle as u8,
+        display: format!("{},x", format_hex_u16(address)),
     })
 };
 
@@ -325,7 +208,7 @@ pub(super) const ABSOLUTE_X_OFFSET: AddressingModeFactory<u8> = |cpu: &mut Cpu, 
 /// LDA $1234, Y
 ///
 /// Loads the value from memory at address 0x1234 + Y into the accumulator register.
-pub(super) const ABSOLUTE_Y_OFFSET: AddressingModeFactory<u8> = |cpu: &mut Cpu, bus: &mut Bus| {
+pub(crate) const ABSOLUTE_Y_OFFSET: AddressingModeFactory<u8> = |cpu: &mut Cpu, bus: &Bus| {
     let address = bus.read_u16(cpu.program_counter);
     cpu.program_counter += 2;
     let offset_address = address + cpu.y as u16;
@@ -335,6 +218,7 @@ pub(super) const ABSOLUTE_Y_OFFSET: AddressingModeFactory<u8> = |cpu: &mut Cpu, 
     Box::new(MemoryAddressingMode {
         address: offset_address,
         additional_cycles_required: add_cycle as u8,
+        display: format!("{},y", format_hex_u16(address)),
     })
 };
 
@@ -343,7 +227,7 @@ pub(super) const ABSOLUTE_Y_OFFSET: AddressingModeFactory<u8> = |cpu: &mut Cpu, 
 // ///
 // /// Reads a 16-bit pointer from the next two bytes and returns the
 // /// pointed-to address.
-// pub(super) const INDIRECT: AddressingModeFactory<u8> = |cpu: &mut Cpu, bus: &mut Bus| {
+// pub(crate) const INDIRECT: AddressingModeFactory<u8> = |cpu: &mut Cpu, bus: &Bus| {
 //     let pointer_address = bus.read_u16(cpu.program_counter);
 //     cpu.program_counter += 2;
 
@@ -365,8 +249,8 @@ pub(super) const ABSOLUTE_Y_OFFSET: AddressingModeFactory<u8> = |cpu: &mut Cpu, 
 /// Indirect addressing mode
 ///
 /// Used for jump instructions to allow them to also access the memory location
-pub(super) const INDIRECT_JUMPING: AddressingModeFactory<JumpAddress> =
-    |cpu: &mut Cpu, bus: &mut Bus| {
+pub(crate) const INDIRECT_JUMPING: AddressingModeFactory<JumpAddress> =
+    |cpu: &mut Cpu, bus: &Bus| {
         let pointer_address = bus.read_u16(cpu.program_counter);
         cpu.program_counter += 2;
 
@@ -382,6 +266,7 @@ pub(super) const INDIRECT_JUMPING: AddressingModeFactory<JumpAddress> =
         Box::new(JumpingAddressingMode {
             address,
             additional_cycles_required: 0,
+            display: format!("({})", format_hex_u16(address)),
         })
     };
 
@@ -389,7 +274,7 @@ pub(super) const INDIRECT_JUMPING: AddressingModeFactory<JumpAddress> =
 ///
 /// Reads an 8-bit pointer to a zero page location from the next byte + x
 /// and then uses that as the actual address.
-pub(super) const INDIRECT_X_OFFSET: AddressingModeFactory<u8> = |cpu: &mut Cpu, bus: &mut Bus| {
+pub(crate) const INDIRECT_X_OFFSET: AddressingModeFactory<u8> = |cpu: &mut Cpu, bus: &Bus| {
     let pointer_address = bus.read(cpu.program_counter) as u16;
     cpu.program_counter += 1;
 
@@ -398,6 +283,7 @@ pub(super) const INDIRECT_X_OFFSET: AddressingModeFactory<u8> = |cpu: &mut Cpu, 
     Box::new(MemoryAddressingMode {
         address,
         additional_cycles_required: 0,
+        display: format!("({},x)", format_hex_u16(address)),
     })
 };
 
@@ -405,7 +291,7 @@ pub(super) const INDIRECT_X_OFFSET: AddressingModeFactory<u8> = |cpu: &mut Cpu, 
 ///
 /// Reads an 8-bit pointer to a zero page location from the next byte
 /// and then adds y to that loccation and returns that new address.
-pub(super) const INDIRECT_Y_OFFSET: AddressingModeFactory<u8> = |cpu: &mut Cpu, bus: &mut Bus| {
+pub(crate) const INDIRECT_Y_OFFSET: AddressingModeFactory<u8> = |cpu: &mut Cpu, bus: &Bus| {
     let pointer_address = bus.read(cpu.program_counter) as u16;
     cpu.program_counter += 1;
 
@@ -416,18 +302,22 @@ pub(super) const INDIRECT_Y_OFFSET: AddressingModeFactory<u8> = |cpu: &mut Cpu, 
     Box::new(MemoryAddressingMode {
         address: offset_address,
         additional_cycles_required: add_cycle as u8,
+        display: format!("({}),y", format_hex_u16(address)),
     })
 };
 
 /// Relative addressing mode
 ///
 /// Only branch instructions use this.
-pub(super) const RELATIVE: AddressingModeFactory<i8> = |cpu: &mut Cpu, _: &mut Bus| {
+pub(crate) const RELATIVE: AddressingModeFactory<i8> = |cpu: &mut Cpu, bus: &Bus| {
     let address = cpu.program_counter;
     cpu.program_counter += 1;
+
+    let value = bus.read(address) as i8;
 
     Box::new(RelativeAddressingMode {
         address,
         additional_cycles_required: 0,
+        display: format!("*{}", format_hex_i8(value)),
     })
 };
