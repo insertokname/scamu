@@ -46,8 +46,8 @@ pub(super) trait InstructionTrait {
     /// The ammount of cycles required for that instruction to be executed
     fn execute(&mut self, cpu: &mut Cpu, bus: &mut Bus) -> u8;
     /// # Returns:
-    /// The dissassembled version of the instruction in string slice
-    fn dissassemble_instruction(&self) -> String;
+    /// The disassembled version of the instruction in string slice
+    fn disassemble_instruction(&self) -> String;
 }
 
 impl<T: Debug> InstructionTrait for Instruction<T> {
@@ -55,7 +55,7 @@ impl<T: Debug> InstructionTrait for Instruction<T> {
         (self.operation)(cpu, bus, &mut self.addressing_mode);
         return self.cycles + self.addressing_mode.additional_cycles_required();
     }
-    fn dissassemble_instruction(&self) -> String {
+    fn disassemble_instruction(&self) -> String {
         format!("{} {}", self.operation_name, self.addressing_mode.display())
     }
 }

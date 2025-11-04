@@ -86,7 +86,7 @@ impl Cpu {
 
             println!(
                 "Exectuing instruction {} at address {:#X}",
-                next_instruction.dissassemble_instruction(),
+                next_instruction.disassemble_instruction(),
                 instruction_location
             );
 
