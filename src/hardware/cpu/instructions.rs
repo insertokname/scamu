@@ -19,11 +19,11 @@ pub(super) struct InstructionFactory<T> {
 pub(super) trait InstructionFactoryTrait: Send + Sync {
     /// # Returns:
     /// An executable and dissassemblable instruction
-    fn create(&self, cpu: &mut Cpu, bus: &mut Bus) -> Box<dyn InstructionTrait>;
+    fn create(&self, cpu: &Cpu, bus: &Bus) -> Box<dyn InstructionTrait>;
 }
 
 impl<T: 'static + Debug> InstructionFactoryTrait for InstructionFactory<T> {
-    fn create(&self, cpu: &mut Cpu, bus: &mut Bus) -> Box<dyn InstructionTrait> {
+    fn create(&self, cpu: &Cpu, bus: &Bus) -> Box<dyn InstructionTrait> {
         let addressing_mode = (self.addressing_mode_factory)(cpu, bus);
         Box::new(Instruction {
             operation: self.operation,
@@ -41,22 +41,30 @@ pub(super) struct Instruction<T> {
     cycles: u8,
 }
 
-pub(super) trait InstructionTrait {
+pub trait InstructionTrait {
     /// # Returns:
     /// The ammount of cycles required for that instruction to be executed
     fn execute(&mut self, cpu: &mut Cpu, bus: &mut Bus) -> u8;
     /// # Returns:
     /// The disassembled version of the instruction in string slice
     fn disassemble_instruction(&self) -> String;
+    /// # Returns:
+    /// The number you have to add to the program counter to go to the
+    /// next instruction
+    fn next_instruction_offset(&self) -> u16;
 }
 
 impl<T: Debug> InstructionTrait for Instruction<T> {
     fn execute(&mut self, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
         (self.operation)(cpu, bus, &mut self.addressing_mode);
-        return self.cycles + self.addressing_mode.additional_cycles_required();
+        return self.cycles + self.addressing_mode.cpu_additional_cycles_required();
     }
     fn disassemble_instruction(&self) -> String {
         format!("{} {}", self.operation_name, self.addressing_mode.display())
+    }
+
+    fn next_instruction_offset(&self) -> u16 {
+        self.addressing_mode.cpu_program_counter_offset()
     }
 }
 

@@ -8,16 +8,21 @@ use std::fmt::Debug;
 use super::AddressingMode;
 
 pub(super) struct ImplicitAddressingMode {
-    pub(super) additional_cycles_required: u8,
+    pub(super) cpu_program_counter_offset: u16,
+    pub(super) cpu_additional_cycles_required: u8,
 }
 
 impl AddressingMode<()> for ImplicitAddressingMode {
-    fn additional_cycles_required(&self) -> u8 {
-        self.additional_cycles_required
+    fn cpu_additional_cycles_required(&self) -> u8 {
+        self.cpu_additional_cycles_required
     }
 
-    fn requires_another_cycle(&mut self) {
-        self.additional_cycles_required += 1
+    fn cpu_program_counter_offset(&self) -> u16 {
+        self.cpu_program_counter_offset
+    }
+
+    fn cpu_add_another_required_cycle(&mut self) {
+        self.cpu_additional_cycles_required += 1
     }
 
     fn read(&self, _: &Cpu, _: &Bus) -> () {
@@ -32,17 +37,22 @@ impl AddressingMode<()> for ImplicitAddressingMode {
 }
 
 pub(super) struct AccumulatorAddressingMode {
-    pub(super) additional_cycles_required: u8,
+    pub(super) cpu_program_counter_offset: u16,
+    pub(super) cpu_additional_cycles_required: u8,
     pub(super) display: String,
 }
 
 impl AddressingMode<u8> for AccumulatorAddressingMode {
-    fn additional_cycles_required(&self) -> u8 {
-        self.additional_cycles_required
+    fn cpu_additional_cycles_required(&self) -> u8 {
+        self.cpu_additional_cycles_required
     }
 
-    fn requires_another_cycle(&mut self) {
-        self.additional_cycles_required += 1
+    fn cpu_program_counter_offset(&self) -> u16 {
+        self.cpu_program_counter_offset
+    }
+
+    fn cpu_add_another_required_cycle(&mut self) {
+        self.cpu_additional_cycles_required += 1
     }
 
     fn read(&self, cpu: &Cpu, _: &Bus) -> u8 {
@@ -60,17 +70,22 @@ impl AddressingMode<u8> for AccumulatorAddressingMode {
 
 pub(super) struct MemoryAddressingMode {
     pub(super) address: u16,
-    pub(super) additional_cycles_required: u8,
+    pub(super) cpu_program_counter_offset: u16,
+    pub(super) cpu_additional_cycles_required: u8,
     pub(super) display: String,
 }
 
 impl AddressingMode<u8> for MemoryAddressingMode {
-    fn additional_cycles_required(&self) -> u8 {
-        self.additional_cycles_required
+    fn cpu_additional_cycles_required(&self) -> u8 {
+        self.cpu_additional_cycles_required
     }
 
-    fn requires_another_cycle(&mut self) {
-        self.additional_cycles_required += 1
+    fn cpu_program_counter_offset(&self) -> u16 {
+        self.cpu_program_counter_offset
+    }
+
+    fn cpu_add_another_required_cycle(&mut self) {
+        self.cpu_additional_cycles_required += 1
     }
 
     fn read(&self, _: &Cpu, bus: &Bus) -> u8 {
@@ -88,17 +103,22 @@ impl AddressingMode<u8> for MemoryAddressingMode {
 
 pub(super) struct RelativeAddressingMode {
     pub(super) address: u16,
-    pub(super) additional_cycles_required: u8,
+    pub(super) cpu_program_counter_offset: u16,
+    pub(super) cpu_additional_cycles_required: u8,
     pub(super) display: String,
 }
 
 impl AddressingMode<i8> for RelativeAddressingMode {
-    fn additional_cycles_required(&self) -> u8 {
-        self.additional_cycles_required
+    fn cpu_additional_cycles_required(&self) -> u8 {
+        self.cpu_additional_cycles_required
     }
 
-    fn requires_another_cycle(&mut self) {
-        self.additional_cycles_required += 1
+    fn cpu_program_counter_offset(&self) -> u16 {
+        self.cpu_program_counter_offset
+    }
+
+    fn cpu_add_another_required_cycle(&mut self) {
+        self.cpu_additional_cycles_required += 1
     }
 
     fn read(&self, _: &Cpu, bus: &Bus) -> i8 {
@@ -144,17 +164,22 @@ impl JumpAddress {
 
 pub(super) struct JumpingAddressingMode {
     pub(super) address: u16,
-    pub(super) additional_cycles_required: u8,
+    pub(super) cpu_program_counter_offset: u16,
+    pub(super) cpu_additional_cycles_required: u8,
     pub(super) display: String,
 }
 
 impl AddressingMode<JumpAddress> for JumpingAddressingMode {
-    fn additional_cycles_required(&self) -> u8 {
-        self.additional_cycles_required
+    fn cpu_additional_cycles_required(&self) -> u8 {
+        self.cpu_additional_cycles_required
     }
 
-    fn requires_another_cycle(&mut self) {
-        self.additional_cycles_required += 1
+    fn cpu_program_counter_offset(&self) -> u16 {
+        self.cpu_program_counter_offset
+    }
+
+    fn cpu_add_another_required_cycle(&mut self) {
+        self.cpu_additional_cycles_required += 1
     }
     fn read(&self, _: &Cpu, bus: &Bus) -> JumpAddress {
         JumpAddress {

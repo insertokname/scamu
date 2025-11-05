@@ -18,8 +18,9 @@ use std::fmt::Debug;
 use crate::hardware::{bus::Bus, cpu::Cpu};
 
 pub(super) trait AddressingMode<T: Debug> {
-    fn additional_cycles_required(&self) -> u8;
-    fn requires_another_cycle(&mut self);
+    fn cpu_program_counter_offset(&self) -> u16;
+    fn cpu_additional_cycles_required(&self) -> u8;
+    fn cpu_add_another_required_cycle(&mut self);
     fn read(&self, cpu: &Cpu, bus: &Bus) -> T;
     fn write(&mut self, new_value: T, cpu: &mut Cpu, bus: &mut Bus);
     fn display(&self) -> &str;

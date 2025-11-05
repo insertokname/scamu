@@ -50,10 +50,10 @@ pub(super) const ASL: Operation<u8> = |cpu, bus, addressing_mode| {
 };
 
 fn branch(cpu: &mut Cpu, addressing_mode: &mut Box<dyn AddressingMode<i8>>, address: i8) {
-    addressing_mode.requires_another_cycle();
+    addressing_mode.cpu_add_another_required_cycle();
     let new_address = (cpu.program_counter as i32 + address as i32) as u16;
     if new_address & 0xFF00 != cpu.program_counter & 0xFF00 {
-        addressing_mode.requires_another_cycle();
+        addressing_mode.cpu_add_another_required_cycle();
     }
     cpu.program_counter = new_address;
 }
@@ -120,8 +120,8 @@ pub(super) const BRK: Operation<()> = |cpu, bus, _| {
     cpu.set_flag(INTERRUPT_DISABLE, true);
     cpu.set_flag(BREAK, true);
 
-    let pc = cpu.program_counter;
-    cpu.push_stack_u16(pc, bus);
+    let program_counter = cpu.program_counter;
+    cpu.push_stack_u16(program_counter, bus);
 
     let mut status = cpu.status;
     status |= BREAK | UNUSED;

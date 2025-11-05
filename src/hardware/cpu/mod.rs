@@ -1,4 +1,8 @@
-use crate::hardware::{bus::Bus, constants, cpu::instructions::INSTRUCTIONS_LOOKUP};
+use crate::hardware::{
+    bus::Bus,
+    constants,
+    cpu::instructions::{INSTRUCTIONS_LOOKUP, InstructionTrait},
+};
 
 mod addressing_modes;
 mod instructions;
@@ -30,6 +34,10 @@ impl Cpu {
     pub fn reset(&mut self, bus: &Bus) {
         *self = Self::new();
         self.program_counter = bus.read_u16(0xFFFC);
+    }
+
+    pub fn get_program_counter(&self) -> u16 {
+        self.program_counter
     }
 
     pub fn set_flag(&mut self, flag: u8, enabled: bool) {
@@ -72,6 +80,18 @@ impl Cpu {
         self.cycles_left
     }
 
+    pub fn get_next_instruction(&mut self, bus: &Bus) -> Box<dyn InstructionTrait> {
+        let instruction_code = bus.read(self.program_counter);
+
+        self.program_counter += 1;
+
+        let next_instruction = (&INSTRUCTIONS_LOOKUP[instruction_code as usize]).create(self, bus);
+
+        self.program_counter += next_instruction.next_instruction_offset();
+
+        return next_instruction;
+    }
+
     pub fn tick(&mut self, bus: &mut Bus) {
         if self.cycles_left > 0 {
             self.cycles_left -= 1;
@@ -89,6 +109,11 @@ impl Cpu {
                 next_instruction.disassemble_instruction(),
                 instruction_location
             );
+
+            // We are incrementing the program counter to the first location
+            // after the immediate value. This is the expected behaviour
+            // on the 6502 so yeah
+            self.program_counter += next_instruction.next_instruction_offset();
 
             let required_cycles = next_instruction.execute(self, bus);
             self.cycles_left += required_cycles;

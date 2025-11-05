@@ -32,4 +32,10 @@ impl Bus {
         self.memory[address as usize] = value_low;
         self.memory[(address + 1) as usize] = value_high;
     }
+
+    pub fn write_memory(&mut self, start: u16, memory: &[u8]) {
+        for i in 0..memory.len() {
+            self.write(start + i as u16, memory[i]);
+        }
+    }
 }
