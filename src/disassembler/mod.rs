@@ -4,6 +4,7 @@ use crate::hardware::{bus::Bus, cpu::Cpu};
 pub struct Dissasembler {
     cpu: Cpu,
     bus: Bus,
+    end: u16,
 }
 
 /// TODO: make dissasembling actually find the high entropy regions and
@@ -18,7 +19,11 @@ impl Dissasembler {
         cpu.reset(&bus);
         bus.write_memory(start, memory);
 
-        Self { cpu: cpu, bus: bus }
+        Self {
+            cpu: cpu,
+            bus: bus,
+            end: start + memory.len() as u16,
+        }
     }
 
     pub fn disassemble(&mut self) -> String {
@@ -28,7 +33,7 @@ impl Dissasembler {
             let instruction = self.cpu.get_next_instruction(&self.bus);
             output += instruction.disassemble_instruction().as_str();
             output += "\n";
-            if self.bus.read(self.cpu.get_program_counter()) == 0 {
+            if self.cpu.get_program_counter() >= self.end {
                 break;
             }
         }
