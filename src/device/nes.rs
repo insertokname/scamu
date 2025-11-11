@@ -1,4 +1,4 @@
-use crate::hardware::{bus::Bus, cpu::Cpu};
+use crate::hardware::{bus::Bus, cartrige::Cartrige, cpu::Cpu};
 
 pub struct Nes {
     bus: Bus,
@@ -13,8 +13,20 @@ impl Nes {
         }
     }
 
+    pub fn insert_cartrige(&mut self, cartrige: Cartrige) {
+        self.bus.insert_cartrige(cartrige);
+    }
+
+    pub fn is_resetting(&self) -> bool{
+        self.cpu.is_resetting()
+    }
+
     pub fn reset(&mut self) {
         self.cpu.reset(&self.bus);
+    }
+
+    pub fn reset_with_program_counter(&mut self, program_counter: u16) {
+        self.cpu.reset_with_program_counter(program_counter);
     }
 
     pub fn tick(&mut self) {

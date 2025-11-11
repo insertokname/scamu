@@ -7,9 +7,9 @@ use std::fmt::Debug;
 
 use super::AddressingMode;
 
-pub(super) struct ImplicitAddressingMode {
-    pub(super) cpu_program_counter_offset: u16,
-    pub(super) cpu_additional_cycles_required: u8,
+pub(crate) struct ImplicitAddressingMode {
+    pub(crate) cpu_program_counter_offset: u16,
+    pub(crate) cpu_additional_cycles_required: u8,
 }
 
 impl AddressingMode<()> for ImplicitAddressingMode {
@@ -36,10 +36,10 @@ impl AddressingMode<()> for ImplicitAddressingMode {
     }
 }
 
-pub(super) struct AccumulatorAddressingMode {
-    pub(super) cpu_program_counter_offset: u16,
-    pub(super) cpu_additional_cycles_required: u8,
-    pub(super) display: String,
+pub(crate) struct AccumulatorAddressingMode {
+    pub(crate) cpu_program_counter_offset: u16,
+    pub(crate) cpu_additional_cycles_required: u8,
+    pub(crate) display: String,
 }
 
 impl AddressingMode<u8> for AccumulatorAddressingMode {
@@ -68,11 +68,11 @@ impl AddressingMode<u8> for AccumulatorAddressingMode {
     }
 }
 
-pub(super) struct MemoryAddressingMode {
-    pub(super) address: u16,
-    pub(super) cpu_program_counter_offset: u16,
-    pub(super) cpu_additional_cycles_required: u8,
-    pub(super) display: String,
+pub(crate) struct MemoryAddressingMode {
+    pub(crate) address: u16,
+    pub(crate) cpu_program_counter_offset: u16,
+    pub(crate) cpu_additional_cycles_required: u8,
+    pub(crate) display: String,
 }
 
 impl AddressingMode<u8> for MemoryAddressingMode {
@@ -101,11 +101,40 @@ impl AddressingMode<u8> for MemoryAddressingMode {
     }
 }
 
-pub(super) struct RelativeAddressingMode {
-    pub(super) address: u16,
-    pub(super) cpu_program_counter_offset: u16,
-    pub(super) cpu_additional_cycles_required: u8,
-    pub(super) display: String,
+impl AddressingMode<MemoryAddress> for MemoryAddressingMode {
+    fn cpu_additional_cycles_required(&self) -> u8 {
+        self.cpu_additional_cycles_required
+    }
+
+    fn cpu_program_counter_offset(&self) -> u16 {
+        self.cpu_program_counter_offset
+    }
+
+    fn cpu_add_another_required_cycle(&mut self) {
+        self.cpu_additional_cycles_required += 1
+    }
+
+    fn read(&self, _: &Cpu, bus: &Bus) -> MemoryAddress {
+        MemoryAddress {
+            value: bus.read(self.address),
+            address: self.address,
+        }
+    }
+
+    fn write(&mut self, new_value: MemoryAddress, _: &mut Cpu, bus: &mut Bus) {
+        bus.write(self.address, new_value.value);
+    }
+
+    fn display(&self) -> &str {
+        &self.display
+    }
+}
+
+pub(crate) struct RelativeAddressingMode {
+    pub(crate) address: u16,
+    pub(crate) cpu_program_counter_offset: u16,
+    pub(crate) cpu_additional_cycles_required: u8,
+    pub(crate) display: String,
 }
 
 impl AddressingMode<i8> for RelativeAddressingMode {
@@ -136,19 +165,19 @@ impl AddressingMode<i8> for RelativeAddressingMode {
 
 /// Gives the user access to both the address and the value at the address
 #[derive(Clone, Copy)]
-pub(crate) struct JumpAddress {
-    pub(super) value: u8,
-    pub(super) address: u16,
+pub(crate) struct MemoryAddress {
+    pub(crate) value: u8,
+    pub(crate) address: u16,
 }
 
-impl Debug for JumpAddress {
+impl Debug for MemoryAddress {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.value)
     }
 }
 
 #[allow(dead_code)]
-impl JumpAddress {
+impl MemoryAddress {
     pub fn get_value(&self) -> &u8 {
         &self.value
     }
@@ -162,37 +191,37 @@ impl JumpAddress {
     }
 }
 
-pub(super) struct JumpingAddressingMode {
-    pub(super) address: u16,
-    pub(super) cpu_program_counter_offset: u16,
-    pub(super) cpu_additional_cycles_required: u8,
-    pub(super) display: String,
-}
+// pub(crate) struct JumpingAddressingMode {
+//     pub(crate) address: u16,
+//     pub(crate) cpu_program_counter_offset: u16,
+//     pub(crate) cpu_additional_cycles_required: u8,
+//     pub(crate) display: String,
+// }
 
-impl AddressingMode<JumpAddress> for JumpingAddressingMode {
-    fn cpu_additional_cycles_required(&self) -> u8 {
-        self.cpu_additional_cycles_required
-    }
+// impl AddressingMode<MemoryAddress> for JumpingAddressingMode {
+//     fn cpu_additional_cycles_required(&self) -> u8 {
+//         self.cpu_additional_cycles_required
+//     }
 
-    fn cpu_program_counter_offset(&self) -> u16 {
-        self.cpu_program_counter_offset
-    }
+//     fn cpu_program_counter_offset(&self) -> u16 {
+//         self.cpu_program_counter_offset
+//     }
 
-    fn cpu_add_another_required_cycle(&mut self) {
-        self.cpu_additional_cycles_required += 1
-    }
-    fn read(&self, _: &Cpu, bus: &Bus) -> JumpAddress {
-        JumpAddress {
-            value: bus.read(self.address),
-            address: self.address,
-        }
-    }
+//     fn cpu_add_another_required_cycle(&mut self) {
+//         self.cpu_additional_cycles_required += 1
+//     }
+//     fn read(&self, _: &Cpu, bus: &Bus) -> MemoryAddress {
+//         MemoryAddress {
+//             value: bus.read(self.address),
+//             address: self.address,
+//         }
+//     }
 
-    fn write(&mut self, new_value: JumpAddress, _: &mut Cpu, bus: &mut Bus) {
-        bus.write(self.address, new_value.value);
-    }
+//     fn write(&mut self, new_value: MemoryAddress, _: &mut Cpu, bus: &mut Bus) {
+//         bus.write(self.address, new_value.value);
+//     }
 
-    fn display(&self) -> &str {
-        &self.display
-    }
-}
+//     fn display(&self) -> &str {
+//         &self.display
+//     }
+// }

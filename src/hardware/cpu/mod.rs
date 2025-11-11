@@ -16,8 +16,12 @@ pub struct Cpu {
     stack_pointer: u8,
     status: u8,
     cycles_left: u8,
+    total_cycles: u64,
+    is_resetting: bool,
+    is_jammed: bool, // Caused by the JAM instruction
 }
 
+// TODO: impl interupts
 impl Cpu {
     pub fn new() -> Self {
         Self {
@@ -26,14 +30,30 @@ impl Cpu {
             y: 0,
             program_counter: 0,
             stack_pointer: 0xFD,
-            status: constants::cpu_flags::UNUSED,
+            status: constants::cpu_flags::UNUSED | constants::cpu_flags::INTERRUPT_DISABLE,
             cycles_left: 0,
+            total_cycles: 7,
+            is_resetting: false,
+            is_jammed: false,
         }
+    }
+
+    pub fn is_resetting(&self) -> bool {
+        self.is_resetting
     }
 
     pub fn reset(&mut self, bus: &Bus) {
         *self = Self::new();
         self.program_counter = bus.read_u16(0xFFFC);
+        self.is_jammed = false;
+        self.is_resetting = false;
+    }
+
+    pub fn reset_with_program_counter(&mut self, program_counter: u16) {
+        *self = Self::new();
+        self.program_counter = program_counter;
+        self.is_jammed = false;
+        self.is_resetting = false;
     }
 
     pub fn get_program_counter(&self) -> u16 {
@@ -93,6 +113,14 @@ impl Cpu {
     }
 
     pub fn tick(&mut self, bus: &mut Bus) {
+        if self.is_jammed {
+            return;
+        }
+
+        if self.is_resetting {
+            self.is_resetting = false;
+        }
+
         if self.cycles_left > 0 {
             self.cycles_left -= 1;
         } else {
@@ -104,16 +132,35 @@ impl Cpu {
             let mut next_instruction =
                 (&INSTRUCTIONS_LOOKUP[instruction_code as usize]).create(self, bus);
 
-            println!(
-                "Exectuing instruction {} at address {:#X}",
-                next_instruction.disassemble_instruction(),
-                instruction_location
-            );
-
             // We are incrementing the program counter to the first location
             // after the immediate value. This is the expected behaviour
             // on the 6502 so yeah
             self.program_counter += next_instruction.next_instruction_offset();
+
+            let length = 1 + next_instruction.next_instruction_offset() as usize;
+            let mut bytes = Vec::with_capacity(length);
+            for i in 0..length {
+                bytes.push(bus.read(instruction_location + i as u16));
+            }
+            let byte_str = match length {
+                1 => format!("{:02X}      ", bytes[0]),
+                2 => format!("{:02X} {:02X}   ", bytes[0], bytes[1]),
+                3 => format!("{:02X} {:02X} {:02X}", bytes[0], bytes[1], bytes[2]),
+                _ => unreachable!(),
+            };
+            let disasm = next_instruction.disassemble_instruction();
+            log::info!(
+                "{:04X}  {} {:<33}A:{:02X} X:{:02X} Y:{:02X} P:{:02X} SP:{:02X} CYC:{}",
+                instruction_location,
+                byte_str,
+                disasm,
+                self.accumulator,
+                self.x,
+                self.y,
+                self.status,
+                self.stack_pointer,
+                self.total_cycles
+            );
 
             let required_cycles = next_instruction.execute(self, bus);
             self.cycles_left += required_cycles;
@@ -122,6 +169,8 @@ impl Cpu {
             // and the other ones are stored in the left_cycles and we
             // will artificially drain the left_cycles in the next ticks
             self.cycles_left -= 1;
+
+            self.total_cycles = self.total_cycles + required_cycles as u64;
         }
     }
 }

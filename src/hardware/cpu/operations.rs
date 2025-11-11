@@ -3,7 +3,7 @@ use crate::hardware::{
     constants::cpu_flags::*,
     cpu::{
         Cpu,
-        addressing_modes::{AddressingMode, implementations::JumpAddress},
+        addressing_modes::{AddressingMode, implementations::MemoryAddress},
     },
 };
 
@@ -29,12 +29,56 @@ pub(super) const ADC: Operation<u8> = |cpu, bus, addressing_mode| {
     cpu.accumulator = result as u8;
 };
 
+pub(super) const ALR: Operation<u8> = |cpu, bus, addressing_mode| {
+    let argument = addressing_mode.read(cpu, bus);
+    let arguemnt_and = cpu.accumulator & argument;
+    let result = arguemnt_and >> 1;
+
+    cpu.set_flag(CARRY, arguemnt_and & 0x1 > 0);
+    cpu.set_flag(ZERO, result == 0);
+    cpu.set_flag(NEGATIVE, result & 0x80 > 0);
+
+    cpu.accumulator = result;
+};
+
+pub(super) const ANC: Operation<u8> = |cpu, bus, addressing_mode| {
+    let argument = addressing_mode.read(cpu, bus);
+    let result = cpu.accumulator & argument;
+
+    cpu.set_flag(ZERO, result == 0);
+    cpu.set_flag(NEGATIVE, result & 0x80 > 0);
+    cpu.set_flag(CARRY, result & 0x80 > 0);
+
+    cpu.accumulator = result;
+};
+
 pub(super) const AND: Operation<u8> = |cpu, bus, addressing_mode| {
     let argument = addressing_mode.read(cpu, bus);
     let result = cpu.accumulator & argument;
 
     cpu.set_flag(ZERO, result == 0);
     cpu.set_flag(NEGATIVE, result & 0x80 > 0);
+
+    cpu.accumulator = result;
+};
+
+pub(super) const ANE: Operation<u8> = |_, _, _| {
+    // TODO: implement this bullshit https://www.nesdev.org/wiki/Visual6502wiki/6502_Opcode_8B_(XAA,_ANE)
+};
+
+pub(super) const ARR: Operation<u8> = |cpu, bus, addressing_mode| {
+    let argument = addressing_mode.read(cpu, bus);
+    let anded = cpu.accumulator & argument;
+    let mut result = anded >> 1;
+
+    if cpu.get_flag(CARRY) {
+        result |= 0x80;
+    }
+
+    cpu.set_flag(ZERO, result == 0);
+    cpu.set_flag(NEGATIVE, result & 0x80 > 0);
+    cpu.set_flag(CARRY, result & 0x40 > 0);
+    cpu.set_flag(OVERFLOW, ((result >> 6) & 1) ^ ((result >> 5) & 1) > 0);
 
     cpu.accumulator = result;
 };
@@ -115,6 +159,7 @@ pub(super) const BPL: Operation<i8> = |cpu, bus, addressing_mode| {
 };
 
 pub(super) const BRK: Operation<()> = |cpu, bus, _| {
+    cpu.is_resetting = true;
     cpu.program_counter += 1;
 
     cpu.set_flag(INTERRUPT_DISABLE, true);
@@ -190,6 +235,14 @@ pub(super) const CPY: Operation<u8> = |cpu, bus, addressing_mode| {
     cpu.set_flag(NEGATIVE, result & 0x80 > 0);
 };
 
+pub(super) const DCP: Operation<u8> = |cpu, bus, addressing_mode| {
+    let argument: u8 = addressing_mode.read(cpu, bus);
+    let result = argument.wrapping_sub(1);
+
+    addressing_mode.write(result, cpu, bus);
+    CMP(cpu, bus, addressing_mode);
+};
+
 pub(super) const DEC: Operation<u8> = |cpu, bus, addressing_mode| {
     let argument = addressing_mode.read(cpu, bus);
     let result = argument.wrapping_sub(1);
@@ -249,19 +302,44 @@ pub(super) const INY: Operation<()> = |cpu, _, _| {
     cpu.y = result;
 };
 
-pub(super) const JMP: Operation<JumpAddress> = |cpu, bus, addressing_mode| {
-    let argument: JumpAddress = addressing_mode.read(cpu, bus);
+pub(super) const ISB: Operation<u8> = |cpu, bus, addressing_mode| {
+    INC(cpu, bus, addressing_mode);
+    SBC(cpu, bus, addressing_mode);
+};
+
+pub(super) const JAM: Operation<()> = |cpu, _, _| {
+    cpu.is_jammed = true;
+};
+
+pub(super) const JMP: Operation<MemoryAddress> = |cpu, bus, addressing_mode| {
+    let argument: MemoryAddress = addressing_mode.read(cpu, bus);
 
     cpu.program_counter = argument.get_address();
 };
 
-pub(super) const JSR: Operation<JumpAddress> = |cpu, bus, addressing_mode| {
-    let argument: JumpAddress = addressing_mode.read(cpu, bus);
+pub(super) const JSR: Operation<MemoryAddress> = |cpu, bus, addressing_mode| {
+    let argument: MemoryAddress = addressing_mode.read(cpu, bus);
     let result = cpu.program_counter.wrapping_sub(1);
 
     cpu.push_stack_u16(result, bus);
 
     cpu.program_counter = argument.get_address();
+};
+
+pub(super) const LAS: Operation<u8> = |cpu, bus, addressing_mode| {
+    let argument = addressing_mode.read(cpu, bus);
+    let result = argument & cpu.stack_pointer;
+    cpu.accumulator = result;
+    cpu.x = result;
+    cpu.stack_pointer = result;
+
+    cpu.set_flag(ZERO, result == 0);
+    cpu.set_flag(NEGATIVE, result & 0x80 > 0);
+};
+
+pub(super) const LAX: Operation<u8> = |cpu, bus, addressing_mode| {
+    LDA(cpu,bus,addressing_mode);
+    LDX(cpu,bus,addressing_mode);
 };
 
 pub(super) const LDA: Operation<u8> = |cpu, bus, addressing_mode| {
@@ -302,7 +380,12 @@ pub(super) const LSR: Operation<u8> = |cpu, bus, addressing_mode| {
     addressing_mode.write(result, cpu, bus);
 };
 
-pub(super) const NOP: Operation<()> = |_, _, _| {};
+pub(super) const LXA: Operation<u8> = |_, _, _| {
+    //TODO: impl this
+};
+pub(super) fn make_nop<T>() -> Operation<T> {
+    |_, _, _| {}
+}
 
 pub(super) const ORA: Operation<u8> = |cpu, bus, addressing_mode| {
     let argument = addressing_mode.read(cpu, bus);
@@ -332,11 +415,15 @@ pub(super) const PLA: Operation<()> = |cpu, bus, _| {
 };
 
 pub(super) const PLP: Operation<()> = |cpu, bus, _| {
-    // TODO: implement the 1 instruction delay of the I flag
     let argument = cpu.pop_stack(bus);
-    let result = argument & UNUSED & (!BREAK);
+    let result = (argument & !BREAK) | UNUSED;
 
     cpu.status = result;
+};
+
+pub(super) const RLA: Operation<u8> = |cpu, bus, addressing_mode| {
+    ROL(cpu, bus, addressing_mode);
+    AND(cpu, bus, addressing_mode);
 };
 
 pub(super) const ROL: Operation<u8> = |cpu, bus, addressing_mode| {
@@ -369,9 +456,14 @@ pub(super) const ROR: Operation<u8> = |cpu, bus, addressing_mode| {
     addressing_mode.write(result, cpu, bus);
 };
 
+pub(super) const RRA: Operation<u8> = |cpu, bus, addressing_mode| {
+    ROR(cpu, bus, addressing_mode);
+    ADC(cpu, bus, addressing_mode);
+};
+
 pub(super) const RTI: Operation<()> = |cpu, bus, _| {
     let flags = cpu.pop_stack(bus);
-    cpu.status = flags & UNUSED & (!BREAK);
+    cpu.status = (flags & !BREAK) | UNUSED;
 
     cpu.program_counter = cpu.pop_stack_u16(bus);
 };
@@ -379,6 +471,10 @@ pub(super) const RTI: Operation<()> = |cpu, bus, _| {
 pub(super) const RTS: Operation<()> = |cpu, bus, _| {
     cpu.program_counter = cpu.pop_stack_u16(bus);
     cpu.program_counter += 1;
+};
+
+pub(super) const SAX: Operation<u8> = |cpu, bus, addressing_mode| {
+    addressing_mode.write(cpu.accumulator & cpu.x, cpu, bus);
 };
 
 pub(super) const SBC: Operation<u8> = |cpu, bus, addressing_mode| {
@@ -400,6 +496,16 @@ pub(super) const SBC: Operation<u8> = |cpu, bus, addressing_mode| {
     cpu.accumulator = result as u8;
 };
 
+pub(super) const SBX: Operation<u8> = |cpu, bus, addressing_mode| {
+    let argument = addressing_mode.read(cpu, bus);
+    let result = (cpu.accumulator & cpu.x).wrapping_sub(argument);
+    cpu.x = result;
+
+    cpu.set_flag(CARRY, cpu.accumulator >= argument);
+    cpu.set_flag(ZERO, result == 0);
+    cpu.set_flag(NEGATIVE, result & 0x80 > 0);
+};
+
 pub(super) const SEC: Operation<()> = |cpu, _, _| {
     cpu.set_flag(CARRY, true);
 };
@@ -412,6 +518,37 @@ pub(super) const SEI: Operation<()> = |cpu, _, _| {
     cpu.set_flag(INTERRUPT_DISABLE, true);
 };
 
+pub(super) const SHA: Operation<MemoryAddress> = |cpu, bus, addressing_mode| {
+    let mut argument: MemoryAddress = addressing_mode.read(cpu, bus);
+    let value = cpu.accumulator & cpu.x & ((argument.get_address() >> 8) as u8).wrapping_add(1);
+    argument.set_value(value);
+    addressing_mode.write(argument, cpu, bus);
+};
+
+pub(super) const SHY: Operation<MemoryAddress> = |cpu, bus, addressing_mode| {
+    let mut argument: MemoryAddress = addressing_mode.read(cpu, bus);
+    let value = cpu.accumulator & cpu.y & ((argument.get_address() >> 8) as u8).wrapping_add(1);
+    argument.set_value(value);
+    addressing_mode.write(argument, cpu, bus);
+};
+
+pub(super) const SHX: Operation<MemoryAddress> = |cpu, bus, addressing_mode| {
+    let mut argument: MemoryAddress = addressing_mode.read(cpu, bus);
+    let value = cpu.accumulator & cpu.x & ((argument.get_address() >> 8) as u8).wrapping_add(1);
+    argument.set_value(value);
+    addressing_mode.write(argument, cpu, bus);
+};
+
+pub(super) const SLO: Operation<u8> = |cpu, bus, addressing_mode| {
+    ASL(cpu, bus, addressing_mode);
+    ORA(cpu, bus, addressing_mode);
+};
+
+pub(super) const SRE: Operation<u8> = |cpu, bus, addressing_mode| {
+    LSR(cpu, bus, addressing_mode);
+    EOR(cpu, bus, addressing_mode);
+};
+
 pub(super) const STA: Operation<u8> = |cpu, bus, addressing_mode| {
     addressing_mode.write(cpu.accumulator, cpu, bus);
 };
@@ -422,6 +559,11 @@ pub(super) const STX: Operation<u8> = |cpu, bus, addressing_mode| {
 
 pub(super) const STY: Operation<u8> = |cpu, bus, addressing_mode| {
     addressing_mode.write(cpu.y, cpu, bus);
+};
+
+pub(super) const TAS: Operation<MemoryAddress> = |cpu, bus, addressing_mode| {
+    cpu.stack_pointer = cpu.accumulator & cpu.x;
+    SHA(cpu, bus, addressing_mode);
 };
 
 pub(super) const TAX: Operation<()> = |cpu, _, _| {
@@ -463,9 +605,6 @@ pub(super) const TXA: Operation<()> = |cpu, _, _| {
 pub(super) const TXS: Operation<()> = |cpu, _, _| {
     let result = cpu.x;
 
-    cpu.set_flag(ZERO, result == 0);
-    cpu.set_flag(NEGATIVE, result & 0x80 > 0);
-
     cpu.stack_pointer = result;
 };
 
@@ -478,4 +617,3 @@ pub(super) const TYA: Operation<()> = |cpu, _, _| {
     cpu.accumulator = result;
 };
 
-pub(super) const ILL: Operation<()> = |_, _, _| println!("Requested to run illegal instruction!");

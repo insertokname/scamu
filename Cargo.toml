@@ -6,3 +6,7 @@ edition = "2024"
 [lib]
 name = "scamu"
 crate-type = ["staticlib", "dylib"]
+
+[dependencies]
+log = "0.4.28"
+thiserror = "2.0.17"

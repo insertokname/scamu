@@ -1,3 +1,4 @@
 pub mod bus;
-pub mod cpu;
+pub mod cartrige;
 pub mod constants;
+pub mod cpu;

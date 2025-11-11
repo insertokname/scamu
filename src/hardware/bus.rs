@@ -1,22 +1,46 @@
 use super::constants;
+use crate::hardware::cartrige::Cartrige;
 
 pub struct Bus {
     memory: [u8; constants::BUS_SIZE],
+    cartrige: Option<Cartrige>,
 }
 
 impl Bus {
     pub fn new() -> Self {
-        Self {
+        let mut bus = Self {
             memory: [0; constants::BUS_SIZE],
+            cartrige: None,
+        };
+        for addr in 0x4000..0x4020 {
+            bus.memory[addr] = 0xFF;
         }
+        bus
+    }
+
+    pub fn insert_cartrige(&mut self, cartrige: Cartrige) {
+        self.cartrige = Some(cartrige);
     }
 
     pub fn read(&self, address: u16) -> u8 {
-        self.memory[address as usize]
+        match address {
+            0..0x8000 => self.memory[address as usize],
+            0x8000.. => match self.cartrige.as_ref() {
+                Some(some) => some.read(address),
+                None => 0,
+            },
+        }
     }
 
     pub fn write(&mut self, address: u16, value: u8) {
-        self.memory[address as usize] = value
+        match address {
+            0..0x8000 => self.memory[address as usize] = value,
+            0x8000.. => {
+                if let Some(some) = self.cartrige.as_mut() {
+                    some.write(address, value)
+                }
+            }
+        }
     }
 
     pub fn read_u16(&self, address: u16) -> u16 {
