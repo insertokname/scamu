@@ -6,6 +6,6 @@ pub enum CartrigeParseError {
     MissingMagicNumbersError,
     #[error("Was trying to read {_0} bytes but the data was too short!")]
     NotEnoughBytesError(usize),
-    #[error("Raw program memory to large {_0}. It should be max 16384!")]
-    RawProgramMemoryToLargeError(usize),
+    #[error("Unknown mapper id: {_0}!")]
+    UnknownMapperIdError(u8),
 }

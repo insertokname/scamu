@@ -1,4 +1,6 @@
-use crate::hardware::cartrige::mapper::implementations::*;
+use crate::hardware::cartrige::{Header, error::CartrigeParseError, mapper::implementations::*};
+
+use super::Result;
 
 mod implementations;
 
@@ -7,6 +9,9 @@ pub(super) trait Mapper {
     fn map_read(&self, address: u16) -> u16;
 }
 
-pub(super) fn from_id(id: u8) -> Box<dyn Mapper> {
-    Box::new(M000 {})
+pub(super) fn from_header(header: Header) -> Result<Box<dyn Mapper>> {
+    match header.get_mapper_id() {
+        0 => Ok(Box::new(M000 {header})),
+        unkown_id => Err(CartrigeParseError::UnknownMapperIdError(unkown_id)),
+    }
 }

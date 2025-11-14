@@ -1,14 +1,26 @@
-use crate::hardware::cartrige::Mapper;
+use crate::hardware::cartrige::{Header, Mapper};
 
-pub(super) struct M000 {}
+pub(super) struct M000 {
+    pub header: Header,
+}
 
 impl Mapper for M000 {
-    fn map_write(&mut self, address: u16, value: u8) -> u16 {
-        address
+    fn map_write(&mut self, address: u16, _: u8) -> u16 {
+        self.map_prg_address(address)
     }
 
-    // TODO: actually do the mirroring logic for the correct banks
     fn map_read(&self, address: u16) -> u16 {
-        address & 0x3FFF
+        self.map_prg_address(address)
+    }
+}
+
+impl M000 {
+    fn map_prg_address(&self, address: u16) -> u16 {
+        let offset = address - 0x8000;
+        if self.header.prg_size == 1 {
+            offset & 0x3FFF
+        } else {
+            offset
+        }
     }
 }
