@@ -13,12 +13,12 @@
 use std::{fmt::Debug, sync::LazyLock};
 
 use crate::hardware::{
-    bus::Bus,
     cpu::{
         Cpu,
         addressing_modes::{AddressingMode, factories::*},
-        operations::*,
+        operations::{Operation, *},
     },
+    cpu_bus::CpuBus,
 };
 
 pub(super) struct Instruction<T> {
@@ -33,7 +33,7 @@ pub(super) struct Instruction<T> {
 pub trait InstructionTrait {
     /// # Returns:
     /// The ammount of cycles required for that instruction to be executed
-    fn execute(&mut self, cpu: &mut Cpu, bus: &mut Bus) -> u8;
+    fn execute(&mut self, cpu: &mut Cpu, bus: &mut CpuBus) -> u8;
     /// # Returns:
     /// The disassembled version of the instruction in string slice
     fn disassemble_instruction(&self) -> String;
@@ -44,7 +44,7 @@ pub trait InstructionTrait {
 }
 
 impl<T: Debug> InstructionTrait for Instruction<T> {
-    fn execute(&mut self, cpu: &mut Cpu, bus: &mut Bus) -> u8 {
+    fn execute(&mut self, cpu: &mut Cpu, bus: &mut CpuBus) -> u8 {
         (self.operation)(cpu, bus, &mut self.addressing_mode);
         let extra_cycles = if self.can_require_extra_cycles {
             self.addressing_mode.cpu_additional_cycles_required()
@@ -79,13 +79,13 @@ pub(super) struct InstructionFactory<T, AM> {
 pub(super) trait InstructionFactoryTrait: Send + Sync {
     /// # Returns:
     /// An executable and dissassemblable instruction
-    fn create(&self, cpu: &Cpu, bus: &Bus) -> Box<dyn InstructionTrait>;
+    fn create(&self, cpu: &Cpu, bus: &CpuBus) -> Box<dyn InstructionTrait>;
 }
 
 impl<T: 'static + Debug, AM: AddressingMode<T> + 'static> InstructionFactoryTrait
     for InstructionFactory<T, AM>
 {
-    fn create(&self, cpu: &Cpu, bus: &Bus) -> Box<dyn InstructionTrait> {
+    fn create(&self, cpu: &Cpu, bus: &CpuBus) -> Box<dyn InstructionTrait> {
         Box::new(Instruction {
             operation: self.operation,
             addressing_mode: (self.addressing_mode_factory)(cpu, bus),

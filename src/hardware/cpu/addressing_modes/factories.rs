@@ -3,7 +3,8 @@
 //! This module is responsible for creating simple helpers that return
 //! an [super::AddressingMode]. They are used in the
 //! [lookup table](crate::hardware::cpu::instructions::INSTRUCTIONS_LOOKUP).
-use crate::hardware::{bus::Bus, cpu::Cpu};
+
+use crate::hardware::{cpu::Cpu, cpu_bus::CpuBus};
 
 use super::implementations::*;
 
@@ -23,13 +24,13 @@ fn format_hex_u16(value: u16) -> String {
     format!("${value:04X}")
 }
 
-pub(crate) type AddressingModeFactory<AM> = fn(cpu: &Cpu, bus: &Bus) -> Box<AM>;
+pub(crate) type AddressingModeFactory<AM> = fn(cpu: &Cpu, bus: &CpuBus) -> Box<AM>;
 
 // /// Implicit addressing mode
 // ///
 // /// Instructions using implicit mode do not require a parameter (ex: CLC)
-pub(crate) const IMPLICIT: fn(cpu: &Cpu, bus: &Bus) -> Box<ImplicitAddressingMode> =
-    |_: &Cpu, _: &Bus| {
+pub(crate) const IMPLICIT: fn(cpu: &Cpu, bus: &CpuBus) -> Box<ImplicitAddressingMode> =
+    |_: &Cpu, _: &CpuBus| {
         Box::new(ImplicitAddressingMode {
             cpu_program_counter_offset: 0,
             cpu_additional_cycles_required: 0,
@@ -39,8 +40,8 @@ pub(crate) const IMPLICIT: fn(cpu: &Cpu, bus: &Bus) -> Box<ImplicitAddressingMod
 /// Accumulator addressing mode
 ///
 /// Gets the acculumator as the argument
-pub(crate) const ACCUMULATOR: fn(cpu: &Cpu, bus: &Bus) -> Box<AccumulatorAddressingMode> =
-    |_: &Cpu, _: &Bus| {
+pub(crate) const ACCUMULATOR: fn(cpu: &Cpu, bus: &CpuBus) -> Box<AccumulatorAddressingMode> =
+    |_: &Cpu, _: &CpuBus| {
         Box::new(AccumulatorAddressingMode {
             cpu_program_counter_offset: 0,
             cpu_additional_cycles_required: 0,
@@ -51,8 +52,8 @@ pub(crate) const ACCUMULATOR: fn(cpu: &Cpu, bus: &Bus) -> Box<AccumulatorAddress
 /// Immediate addressing mode
 ///
 /// Gets the next byte as the argument
-pub(crate) const IMMEDIATE: fn(cpu: &Cpu, bus: &Bus) -> Box<MemoryAddressingMode> =
-    |cpu: &Cpu, bus: &Bus| {
+pub(crate) const IMMEDIATE: fn(cpu: &Cpu, bus: &CpuBus) -> Box<MemoryAddressingMode> =
+    |cpu: &Cpu, bus: &CpuBus| {
         let address = cpu.program_counter;
 
         let value = bus.read(address);
@@ -77,8 +78,8 @@ pub(crate) const IMMEDIATE: fn(cpu: &Cpu, bus: &Bus) -> Box<MemoryAddressingMode
 ///
 /// Loads the value from memory at address 0x0042 into the accumulator
 /// register.
-pub(crate) const ZERO_PAGE: fn(cpu: &Cpu, bus: &Bus) -> Box<MemoryAddressingMode> =
-    |cpu: &Cpu, bus: &Bus| {
+pub(crate) const ZERO_PAGE: fn(cpu: &Cpu, bus: &CpuBus) -> Box<MemoryAddressingMode> =
+    |cpu: &Cpu, bus: &CpuBus| {
         let address = bus.read(cpu.program_counter) as u16;
 
         let value = bus.read(address);
@@ -104,8 +105,8 @@ pub(crate) const ZERO_PAGE: fn(cpu: &Cpu, bus: &Bus) -> Box<MemoryAddressingMode
 ///
 /// Loads the value from memory at address 0x0042 + X into the accumulator
 /// register.
-pub(crate) const ZERO_PAGE_X_OFFSET: fn(cpu: &Cpu, bus: &Bus) -> Box<MemoryAddressingMode> =
-    |cpu: &Cpu, bus: &Bus| {
+pub(crate) const ZERO_PAGE_X_OFFSET: fn(cpu: &Cpu, bus: &CpuBus) -> Box<MemoryAddressingMode> =
+    |cpu: &Cpu, bus: &CpuBus| {
         let argument = cpu.program_counter;
         let address = bus.read(argument);
         let offset_address = address.wrapping_add(cpu.x) as u16;
@@ -135,8 +136,8 @@ pub(crate) const ZERO_PAGE_X_OFFSET: fn(cpu: &Cpu, bus: &Bus) -> Box<MemoryAddre
 ///
 /// Loads the value from memory at address 0x0042 + Y into the accumulator
 /// register.
-pub(crate) const ZERO_PAGE_Y_OFFSET: fn(cpu: &Cpu, bus: &Bus) -> Box<MemoryAddressingMode> =
-    |cpu: &Cpu, bus: &Bus| {
+pub(crate) const ZERO_PAGE_Y_OFFSET: fn(cpu: &Cpu, bus: &CpuBus) -> Box<MemoryAddressingMode> =
+    |cpu: &Cpu, bus: &CpuBus| {
         let argument = cpu.program_counter;
         let address = bus.read(argument);
         let offset_address = address.wrapping_add(cpu.y) as u16;
@@ -163,8 +164,8 @@ pub(crate) const ZERO_PAGE_Y_OFFSET: fn(cpu: &Cpu, bus: &Bus) -> Box<MemoryAddre
 /// LDA $1234
 ///
 /// Loads the value from memory at address 0x1234 into the accumulator register.
-pub(crate) const ABSOLUTE: fn(cpu: &Cpu, bus: &Bus) -> Box<MemoryAddressingMode> =
-    |cpu: &Cpu, bus: &Bus| {
+pub(crate) const ABSOLUTE: fn(cpu: &Cpu, bus: &CpuBus) -> Box<MemoryAddressingMode> =
+    |cpu: &Cpu, bus: &CpuBus| {
         let address = bus.read_u16(cpu.program_counter);
 
         let value = bus.read(address);
@@ -178,8 +179,8 @@ pub(crate) const ABSOLUTE: fn(cpu: &Cpu, bus: &Bus) -> Box<MemoryAddressingMode>
     };
 
 /// [ABSOLUTE] but displays differently
-pub(crate) const ABSOLUTE_JMP: fn(cpu: &Cpu, bus: &Bus) -> Box<MemoryAddressingMode> =
-    |cpu: &Cpu, bus: &Bus| {
+pub(crate) const ABSOLUTE_JMP: fn(cpu: &Cpu, bus: &CpuBus) -> Box<MemoryAddressingMode> =
+    |cpu: &Cpu, bus: &CpuBus| {
         let address = bus.read_u16(cpu.program_counter);
 
         Box::new(MemoryAddressingMode {
@@ -215,8 +216,8 @@ pub(crate) const ABSOLUTE_JMP: fn(cpu: &Cpu, bus: &Bus) -> Box<MemoryAddressingM
 /// LDA $1234, X
 ///
 /// Loads the value from memory at address 0x1234 + X into the accumulator register.
-pub(crate) const ABSOLUTE_X_OFFSET: fn(cpu: &Cpu, bus: &Bus) -> Box<MemoryAddressingMode> =
-    |cpu: &Cpu, bus: &Bus| {
+pub(crate) const ABSOLUTE_X_OFFSET: fn(cpu: &Cpu, bus: &CpuBus) -> Box<MemoryAddressingMode> =
+    |cpu: &Cpu, bus: &CpuBus| {
         let address = bus.read_u16(cpu.program_counter);
         let offset_address = address + cpu.x as u16;
         let value = bus.read(offset_address);
@@ -244,8 +245,8 @@ pub(crate) const ABSOLUTE_X_OFFSET: fn(cpu: &Cpu, bus: &Bus) -> Box<MemoryAddres
 /// LDA $1234, Y
 ///
 /// Loads the value from memory at address 0x1234 + Y into the accumulator register.
-pub(crate) const ABSOLUTE_Y_OFFSET: fn(cpu: &Cpu, bus: &Bus) -> Box<MemoryAddressingMode> =
-    |cpu: &Cpu, bus: &Bus| {
+pub(crate) const ABSOLUTE_Y_OFFSET: fn(cpu: &Cpu, bus: &CpuBus) -> Box<MemoryAddressingMode> =
+    |cpu: &Cpu, bus: &CpuBus| {
         let address = bus.read_u16(cpu.program_counter);
         let offset_address = address.wrapping_add(cpu.y as u16);
         let value = bus.read(offset_address);
@@ -319,8 +320,8 @@ pub(crate) const ABSOLUTE_Y_OFFSET: fn(cpu: &Cpu, bus: &Bus) -> Box<MemoryAddres
 /// Indirect addressing mode
 ///
 /// Used for jump instructions to allow them to also access the memory location
-pub(crate) const INDIRECT: fn(cpu: &Cpu, bus: &Bus) -> Box<MemoryAddressingMode> =
-    |cpu: &Cpu, bus: &Bus| {
+pub(crate) const INDIRECT: fn(cpu: &Cpu, bus: &CpuBus) -> Box<MemoryAddressingMode> =
+    |cpu: &Cpu, bus: &CpuBus| {
         let pointer_address = bus.read_u16(cpu.program_counter);
 
         let low = bus.read(pointer_address) as u16;
@@ -344,8 +345,8 @@ pub(crate) const INDIRECT: fn(cpu: &Cpu, bus: &Bus) -> Box<MemoryAddressingMode>
 ///
 /// Reads an 8-bit pointer to a zero page location from the next byte + x
 /// and then uses that as the actual address.
-pub(crate) const INDIRECT_X_OFFSET: fn(cpu: &Cpu, bus: &Bus) -> Box<MemoryAddressingMode> =
-    |cpu: &Cpu, bus: &Bus| {
+pub(crate) const INDIRECT_X_OFFSET: fn(cpu: &Cpu, bus: &CpuBus) -> Box<MemoryAddressingMode> =
+    |cpu: &Cpu, bus: &CpuBus| {
         let argument = bus.read(cpu.program_counter);
 
         let pointer = argument.wrapping_add(cpu.x);
@@ -373,8 +374,8 @@ pub(crate) const INDIRECT_X_OFFSET: fn(cpu: &Cpu, bus: &Bus) -> Box<MemoryAddres
 ///
 /// Reads an 8-bit pointer to a zero page location from the next byte
 /// and then adds y to that loccation and returns that new address.
-pub(crate) const INDIRECT_Y_OFFSET: fn(cpu: &Cpu, bus: &Bus) -> Box<MemoryAddressingMode> =
-    |cpu: &Cpu, bus: &Bus| {
+pub(crate) const INDIRECT_Y_OFFSET: fn(cpu: &Cpu, bus: &CpuBus) -> Box<MemoryAddressingMode> =
+    |cpu: &Cpu, bus: &CpuBus| {
         let argument = bus.read(cpu.program_counter) as u16;
 
         let low = bus.read(argument);
@@ -430,8 +431,8 @@ pub(crate) const INDIRECT_Y_OFFSET: fn(cpu: &Cpu, bus: &Bus) -> Box<MemoryAddres
 /// Relative addressing mode
 ///
 /// Only branch instructions use this.
-pub(crate) const RELATIVE: fn(cpu: &Cpu, bus: &Bus) -> Box<RelativeAddressingMode> =
-    |cpu: &Cpu, bus: &Bus| {
+pub(crate) const RELATIVE: fn(cpu: &Cpu, bus: &CpuBus) -> Box<RelativeAddressingMode> =
+    |cpu: &Cpu, bus: &CpuBus| {
         let address = cpu.program_counter;
 
         let value = bus.read(address) as i8;

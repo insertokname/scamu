@@ -1,7 +1,7 @@
 use crate::hardware::{
-    bus::Bus,
     constants,
     cpu::instructions::{INSTRUCTIONS_LOOKUP, InstructionTrait},
+    cpu_bus::CpuBus,
 };
 
 mod addressing_modes;
@@ -42,7 +42,7 @@ impl Cpu {
         self.is_resetting
     }
 
-    pub fn reset(&mut self, bus: &Bus) {
+    pub fn reset(&mut self, bus: &CpuBus) {
         *self = Self::new();
         self.program_counter = bus.read_u16(0xFFFC);
         self.is_jammed = false;
@@ -72,17 +72,17 @@ impl Cpu {
         (self.status & flag) > 0
     }
 
-    pub fn push_stack(&mut self, value: u8, bus: &mut Bus) {
+    pub fn push_stack(&mut self, value: u8, bus: &mut CpuBus) {
         bus.write(0x100 + self.stack_pointer as u16, value);
         self.stack_pointer = self.stack_pointer.wrapping_sub(1);
     }
 
-    pub fn pop_stack(&mut self, bus: &Bus) -> u8 {
+    pub fn pop_stack(&mut self, bus: &CpuBus) -> u8 {
         self.stack_pointer = self.stack_pointer.wrapping_add(1);
         bus.read(0x100 + self.stack_pointer as u16)
     }
 
-    pub fn push_stack_u16(&mut self, value: u16, bus: &mut Bus) {
+    pub fn push_stack_u16(&mut self, value: u16, bus: &mut CpuBus) {
         let high = (value >> 8) as u8;
         let low = value as u8;
 
@@ -90,7 +90,7 @@ impl Cpu {
         self.push_stack(low, bus);
     }
 
-    pub fn pop_stack_u16(&mut self, bus: &Bus) -> u16 {
+    pub fn pop_stack_u16(&mut self, bus: &CpuBus) -> u16 {
         let low = self.pop_stack(bus) as u16;
         let high = self.pop_stack(bus) as u16;
         (high << 8) | low
@@ -100,7 +100,7 @@ impl Cpu {
         self.cycles_left
     }
 
-    pub fn get_next_instruction(&mut self, bus: &Bus) -> Box<dyn InstructionTrait> {
+    pub fn get_next_instruction(&mut self, bus: &CpuBus) -> Box<dyn InstructionTrait> {
         let instruction_code = bus.read(self.program_counter);
 
         self.program_counter += 1;
@@ -112,7 +112,7 @@ impl Cpu {
         return next_instruction;
     }
 
-    pub fn tick(&mut self, bus: &mut Bus) {
+    pub fn tick(&mut self, bus: &mut CpuBus) {
         if self.is_jammed {
             return;
         }

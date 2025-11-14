@@ -2,8 +2,9 @@
 //!
 //! The implementations of different types of
 //! [Addressing modes](super::AddressingMode).
-use crate::hardware::{bus::Bus, cpu::Cpu};
 use std::fmt::Debug;
+
+use crate::hardware::{cpu::Cpu, cpu_bus::CpuBus};
 
 use super::AddressingMode;
 
@@ -25,11 +26,11 @@ impl AddressingMode<()> for ImplicitAddressingMode {
         self.cpu_additional_cycles_required += 1
     }
 
-    fn read(&self, _: &Cpu, _: &Bus) -> () {
+    fn read(&self, _: &Cpu, _: &CpuBus) -> () {
         ()
     }
 
-    fn write(&mut self, _: (), _: &mut Cpu, _: &mut Bus) {}
+    fn write(&mut self, _: (), _: &mut Cpu, _: &mut CpuBus) {}
 
     fn display(&self) -> &str {
         ""
@@ -55,11 +56,11 @@ impl AddressingMode<u8> for AccumulatorAddressingMode {
         self.cpu_additional_cycles_required += 1
     }
 
-    fn read(&self, cpu: &Cpu, _: &Bus) -> u8 {
+    fn read(&self, cpu: &Cpu, _: &CpuBus) -> u8 {
         cpu.accumulator
     }
 
-    fn write(&mut self, new_value: u8, cpu: &mut Cpu, _: &mut Bus) {
+    fn write(&mut self, new_value: u8, cpu: &mut Cpu, _: &mut CpuBus) {
         cpu.accumulator = new_value;
     }
 
@@ -88,11 +89,11 @@ impl AddressingMode<u8> for MemoryAddressingMode {
         self.cpu_additional_cycles_required += 1
     }
 
-    fn read(&self, _: &Cpu, bus: &Bus) -> u8 {
+    fn read(&self, _: &Cpu, bus: &CpuBus) -> u8 {
         bus.read(self.address)
     }
 
-    fn write(&mut self, new_value: u8, _: &mut Cpu, bus: &mut Bus) {
+    fn write(&mut self, new_value: u8, _: &mut Cpu, bus: &mut CpuBus) {
         bus.write(self.address, new_value);
     }
 
@@ -114,14 +115,14 @@ impl AddressingMode<MemoryAddress> for MemoryAddressingMode {
         self.cpu_additional_cycles_required += 1
     }
 
-    fn read(&self, _: &Cpu, bus: &Bus) -> MemoryAddress {
+    fn read(&self, _: &Cpu, bus: &CpuBus) -> MemoryAddress {
         MemoryAddress {
             value: bus.read(self.address),
             address: self.address,
         }
     }
 
-    fn write(&mut self, new_value: MemoryAddress, _: &mut Cpu, bus: &mut Bus) {
+    fn write(&mut self, new_value: MemoryAddress, _: &mut Cpu, bus: &mut CpuBus) {
         bus.write(self.address, new_value.value);
     }
 
@@ -150,11 +151,11 @@ impl AddressingMode<i8> for RelativeAddressingMode {
         self.cpu_additional_cycles_required += 1
     }
 
-    fn read(&self, _: &Cpu, bus: &Bus) -> i8 {
+    fn read(&self, _: &Cpu, bus: &CpuBus) -> i8 {
         bus.read(self.address) as i8
     }
 
-    fn write(&mut self, new_value: i8, _: &mut Cpu, bus: &mut Bus) {
+    fn write(&mut self, new_value: i8, _: &mut Cpu, bus: &mut CpuBus) {
         bus.write(self.address, new_value as u8);
     }
 

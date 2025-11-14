@@ -1,15 +1,12 @@
 use crate::hardware::{
-    bus::Bus,
     constants::cpu_flags::*,
-    cpu::{
-        Cpu,
-        addressing_modes::{AddressingMode, implementations::MemoryAddress},
-    },
+    cpu::{Cpu, addressing_modes::{AddressingMode, implementations::MemoryAddress}},
+    cpu_bus::CpuBus,
 };
 
 /// # Returns:
 /// The ammount of extra cycles that operation required
-pub(super) type Operation<T> = fn(&mut Cpu, &mut Bus, &mut Box<dyn AddressingMode<T>>);
+pub(super) type Operation<T> = fn(&mut Cpu, &mut CpuBus, &mut Box<dyn AddressingMode<T>>);
 
 pub(super) const ADC: Operation<u8> = |cpu, bus, addressing_mode| {
     let argument = addressing_mode.read(cpu, bus);
@@ -338,8 +335,8 @@ pub(super) const LAS: Operation<u8> = |cpu, bus, addressing_mode| {
 };
 
 pub(super) const LAX: Operation<u8> = |cpu, bus, addressing_mode| {
-    LDA(cpu,bus,addressing_mode);
-    LDX(cpu,bus,addressing_mode);
+    LDA(cpu, bus, addressing_mode);
+    LDX(cpu, bus, addressing_mode);
 };
 
 pub(super) const LDA: Operation<u8> = |cpu, bus, addressing_mode| {
@@ -616,4 +613,3 @@ pub(super) const TYA: Operation<()> = |cpu, _, _| {
 
     cpu.accumulator = result;
 };
-

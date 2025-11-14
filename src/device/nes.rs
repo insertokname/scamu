@@ -1,23 +1,29 @@
-use crate::hardware::{bus::Bus, cartrige::Cartrige, cpu::Cpu};
+use std::{cell::RefCell, rc::Rc};
+
+use crate::hardware::{cartrige::Cartrige, cpu::Cpu, cpu_bus::CpuBus};
 
 pub struct Nes {
-    bus: Bus,
+    bus: CpuBus,
     cpu: Cpu,
+    cartrige: Option<Rc<RefCell<Cartrige>>>,
 }
 
 impl Nes {
     pub fn new() -> Self {
         Self {
-            bus: Bus::new(),
+            bus: CpuBus::new(),
             cpu: Cpu::new(),
+            cartrige: None,
         }
     }
 
     pub fn insert_cartrige(&mut self, cartrige: Cartrige) {
-        self.bus.insert_cartrige(cartrige);
+        let cartrige = Rc::new(RefCell::new(cartrige));
+        self.bus.insert_cartrige(cartrige.clone());
+        self.cartrige = Some(cartrige);
     }
 
-    pub fn is_resetting(&self) -> bool{
+    pub fn is_resetting(&self) -> bool {
         self.cpu.is_resetting()
     }
 

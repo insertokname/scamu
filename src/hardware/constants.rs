@@ -1,4 +1,23 @@
-pub const BUS_SIZE: usize = 2 << 16;
+macro_rules! byte_size {
+    ($val:literal b) => {
+        $val
+    };
+    ($val:literal kb) => {
+        $val * 1024usize
+    };
+    ($val:literal mb) => {
+        $val * 1024usize * 1024
+    };
+    ($val:literal gb) => {
+        $val * 1024usize * 1024 * 1024
+    };
+    ($val:literal tb) => {
+        $val * 1024usize * 1024 * 1024 * 1024 * 1024
+    };
+}
+
+pub const BUS_SIZE: usize = byte_size!(64 kb);
+pub const CPU_RAM_SIZE: usize = byte_size!(2 kb);
 
 pub const STACK_OFFSET: u16 = 0x100;
 
