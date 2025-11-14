@@ -29,7 +29,7 @@ impl CpuBus {
 
     pub fn read(&self, address: u16) -> u8 {
         match address {
-            0x0..0x2000 => self.cpu_ram[address as usize & constants::CPU_RAM_SIZE],
+            0x0..0x2000 => self.cpu_ram[address as usize & (constants::CPU_RAM_SIZE - 1)],
             0x2000..0x4000 => 0,    //TODO: impl ppu registers
             0x4000..0x4020 => 0xFF, // TODO: impl apu
             0x4020.. => self
@@ -42,7 +42,7 @@ impl CpuBus {
 
     pub fn write(&mut self, address: u16, value: u8) {
         match address {
-            0x0..0x2000 => self.cpu_ram[address as usize & constants::CPU_RAM_SIZE] = value,
+            0x0..0x2000 => self.cpu_ram[address as usize & (constants::CPU_RAM_SIZE - 1)] = value,
             0x2000..0x4000 => (), //TODO: impl ppu registers
             0x4000..0x4020 => (), // TODO: impl apu
             0x4020.. => self
