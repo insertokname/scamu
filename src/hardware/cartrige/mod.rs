@@ -1,8 +1,9 @@
 pub mod error;
-mod mapper;
+mod mappers;
+pub mod memory_access;
 
 use crate::hardware::{
-    cartrige::{error::CartrigeParseError, mapper::Mapper},
+    cartrige::{error::CartrigeParseError, mappers::Mapper, memory_access::MemoryAccess},
     constants::*,
 };
 
@@ -81,7 +82,7 @@ impl Cartrige {
         let prg_mem = try_get_next_n(bytes_ptr, 16384 * prg_size as usize)?.to_vec();
         let chr_mem = try_get_next_n(bytes_ptr, 8192 * chr_size as usize)?.to_vec();
 
-        let mapper = mapper::from_header(header.clone())?;
+        let mapper = mappers::from_header(header.clone())?;
 
         Ok(Self {
             mapper,
@@ -91,14 +92,14 @@ impl Cartrige {
         })
     }
 
-    // TODO: impl reading from chr or prg mem
-    pub fn write(&mut self, address: u16, value: u8) {
-        let _ = self.mapper.map_write(address, value);
+    // TODO: impl writing to chr or prg mem
+    pub fn write(&mut self, memory_access: MemoryAccess, value: u8) {
+        let _ = self.mapper.map_write(memory_access, value);
     }
 
-    pub fn read(&self, address: u16) -> u8 {
-        let addr = self.mapper.map_read(address);
-        self.prg_mem[addr as usize]
+    pub fn read(&mut self, memory_access: MemoryAccess) -> Option<u8> {
+        let addr = self.mapper.map_read(memory_access)?;
+        Some(self.prg_mem[addr as usize])
     }
 }
 

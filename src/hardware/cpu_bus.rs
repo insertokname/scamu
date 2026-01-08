@@ -1,6 +1,9 @@
-use std::{cell::RefCell, rc::Rc};
+use std::{
+    cell::{Cell, RefCell},
+    rc::Rc,
+};
 
-use crate::hardware::cartrige::Cartrige;
+use crate::hardware::cartrige::{Cartrige, memory_access::MemoryAccess};
 
 use super::constants;
 
@@ -8,6 +11,7 @@ use super::constants;
 pub struct CpuBus {
     cpu_ram: [u8; constants::CPU_RAM_SIZE],
     cartrige: Option<Rc<RefCell<Cartrige>>>,
+    last_read: Cell<u8>,
 }
 
 impl CpuBus {
@@ -15,6 +19,7 @@ impl CpuBus {
         Self {
             cpu_ram: [0; constants::CPU_RAM_SIZE],
             cartrige: None,
+            last_read: Cell::new(0),
         }
         // // used to pass nestest. will be implemented once APU is ok
         // for addr in 0x4000..0x4020 {
@@ -28,16 +33,22 @@ impl CpuBus {
     }
 
     pub fn read(&self, address: u16) -> u8 {
-        match address {
+        let result = match address {
             0x0..0x2000 => self.cpu_ram[address as usize & (constants::CPU_RAM_SIZE - 1)],
             0x2000..0x4000 => 0,    //TODO: impl ppu registers
             0x4000..0x4020 => 0xFF, // TODO: impl apu
             0x4020.. => self
                 .cartrige
                 .as_ref()
-                .map(|c| c.borrow().read(address))
+                .map(|c| {
+                    c.borrow_mut()
+                        .read(MemoryAccess::CpuAccess { address })
+                        .unwrap_or_else(|| self.last_read.get())
+                })
                 .unwrap_or(0x0),
-        }
+        };
+        self.last_read.set(result);
+        return result;
     }
 
     pub fn write(&mut self, address: u16, value: u8) {
@@ -48,7 +59,10 @@ impl CpuBus {
             0x4020.. => self
                 .cartrige
                 .as_ref()
-                .map(|c| c.borrow_mut().write(address, value))
+                .map(|c| {
+                    c.borrow_mut()
+                        .write(MemoryAccess::CpuAccess { address }, value)
+                })
                 .unwrap_or(()),
         }
     }
