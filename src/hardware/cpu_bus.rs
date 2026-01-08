@@ -7,7 +7,6 @@ use crate::hardware::cartrige::{Cartrige, memory_access::MemoryAccess};
 
 use super::constants;
 
-#[derive()]
 pub struct CpuBus {
     cpu_ram: [u8; constants::CPU_RAM_SIZE],
     cartrige: Option<Rc<RefCell<Cartrige>>>,
