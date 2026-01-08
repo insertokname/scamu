@@ -4,7 +4,7 @@ mod test_logger;
 
 use std::env;
 
-use crate::{device::nes::Nes, hardware::cartrige::Cartrige, test::test_logger::TestLogger};
+use crate::{devices::nes::Nes, hardware::cartrige::Cartrige, test::test_logger::TestLogger};
 
 static NESTEST_TEST_LOGGER: TestLogger = TestLogger::new();
 
