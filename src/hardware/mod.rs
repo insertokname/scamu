@@ -1,4 +1,4 @@
-pub mod bit_flags;
+pub mod bit_ops;
 pub mod cartrige;
 pub mod constants;
 pub mod cpu;

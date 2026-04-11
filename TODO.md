@@ -4,5 +4,4 @@
 - accurate memory fetching with ppu rendering
 - put all addressing mode reads to be optional
 - impl peek for cartriges
-- bitflags -> BitOps 
 - remove old shitty ppu methods

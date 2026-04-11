@@ -1,5 +1,6 @@
 use crate::hardware::{
-    constants::cpu::flags,
+    bit_ops::BitOps,
+    constants::cpu::flags::*,
     cpu::instructions::{INSTRUCTIONS_LOOKUP, InstructionTrait},
     cpu_bus::CpuBus,
 };
@@ -32,7 +33,7 @@ impl Cpu {
             y: 0,
             program_counter: 0,
             stack_pointer: 0xFD,
-            status: flags::UNUSED | flags::INTERRUPT_DISABLE,
+            status: UNUSED | INTERRUPT_DISABLE,
             cycles_left: 0,
             total_cycles: 7,
             is_resetting: false,
@@ -62,18 +63,6 @@ impl Cpu {
 
     pub fn get_program_counter(&self) -> u16 {
         self.program_counter
-    }
-
-    pub fn set_flag(&mut self, flag: u8, enabled: bool) {
-        if enabled {
-            self.status |= flag;
-        } else {
-            self.status &= !flag;
-        }
-    }
-
-    pub fn get_flag(&self, flag: u8) -> bool {
-        (self.status & flag) > 0
     }
 
     pub fn push_stack(&mut self, value: u8, bus: &mut CpuBus) {
@@ -130,11 +119,11 @@ impl Cpu {
         }
 
         if self.is_triggered_nmi
-            || (self.is_triggered_irq && !self.get_flag(flags::INTERRUPT_DISABLE))
+            || (self.is_triggered_irq && !self.status.get_flag_enabled(INTERRUPT_DISABLE))
         {
             self.push_stack_u16(self.program_counter, bus);
             self.push_stack(self.status, bus);
-            self.set_flag(flags::INTERRUPT_DISABLE, true);
+            self.status.set_flag_enabled(INTERRUPT_DISABLE, true);
 
             if self.is_triggered_nmi {
                 self.program_counter = bus.read_u16(0xFFFA);

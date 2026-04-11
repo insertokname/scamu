@@ -1,7 +1,7 @@
 use std::{cell::RefCell, rc::Rc};
 
 use crate::hardware::{
-    bit_flags::{BitFlags, BitOps},
+    bit_ops::BitOps,
     cartrige::{Cartrige, cartrige_access::CartrigeAccess},
     constants::{
         self,
@@ -25,15 +25,15 @@ pub struct Ppu {
     pub pallet_memory: PalletMemory,
     nametable_memory: [u8; NAMETABLE_SIZE * 4],
     open_bus: u8,
-    vram_address: BitFlags<u16>,
-    temp_vram_address: BitFlags<u16>,
+    vram_address: u16,
+    temp_vram_address: u16,
     fine_x: u8,
     is_writing_low_byte: bool,
     /// more info about this: https://www.nesdev.org/wiki/PPU_registers#:~:text=avoid%20wrong%20scrolling.-,the%20ppudata%20read%20buffer,-Reading%20from%20PPUDATA
     ppu_data_read_buffer: u8,
-    pub control_register: BitFlags<u8>,
-    mask_register: BitFlags<u8>,
-    status_register: BitFlags<u8>,
+    pub control_register: u8,
+    mask_register: u8,
+    status_register: u8,
     renderer_sprite_id: u8,
     renderer_attribute_lsb: u8,
     renderer_attribute_msb: u8,
@@ -56,14 +56,14 @@ impl Ppu {
             pallet_memory: PalletMemory::new(),
             nametable_memory: [0; NAMETABLE_SIZE * 4],
             open_bus: 0,
-            vram_address: BitFlags::default(),
-            temp_vram_address: BitFlags::default(),
+            vram_address: 0,
+            temp_vram_address: 0,
             fine_x: 0,
             is_writing_low_byte: false,
             ppu_data_read_buffer: 0,
-            control_register: BitFlags::default(),
-            mask_register: BitFlags::default(),
-            status_register: BitFlags::default(),
+            control_register: 0,
+            mask_register: 0,
+            status_register: 0,
             renderer_sprite_id: 0,
             renderer_attribute_lsb: 0,
             renderer_attribute_msb: 0,
@@ -116,7 +116,7 @@ impl Ppu {
                 // if address < 0x3F00 {
                 let out = self.ppu_data_read_buffer;
                 if !peek {
-                    self.ppu_data_read_buffer = self.read_ppu_bus(self.vram_address.value);
+                    self.ppu_data_read_buffer = self.read_ppu_bus(self.vram_address);
                 }
                 out
                 // } else {
@@ -139,7 +139,7 @@ impl Ppu {
         match address % 0x8 {
             // TODO: IMPL PROPERLY
             0x0 => {
-                self.control_register.value = value;
+                self.control_register = value;
                 let base_nametable_address = self
                     .control_register
                     .get_bitfield(control_flags::BASE_NAMETABLE_ADDRESS);
@@ -147,7 +147,7 @@ impl Ppu {
                     .set_bitfield(BASE_NAMETABLE_ADDRESS, base_nametable_address as u16);
             }
             0x1 => {
-                self.mask_register.value = value;
+                self.mask_register = value;
             }
             0x5 => {
                 if !self.is_writing_low_byte {
@@ -165,18 +165,18 @@ impl Ppu {
             }
             0x6 => {
                 if !self.is_writing_low_byte {
-                    self.temp_vram_address.value =
+                    self.temp_vram_address =
                         ((value as u16) << 8) + (self.temp_vram_address.get_bitmasked(0xFF));
                     self.is_writing_low_byte = true;
                 } else {
-                    self.temp_vram_address.value =
+                    self.temp_vram_address =
                         (self.temp_vram_address.get_bitmasked(0xFF00)) + (value as u16);
                     self.is_writing_low_byte = false;
                     self.vram_address = self.temp_vram_address;
                 }
             }
             0x7 => {
-                self.write(self.vram_address.value, value);
+                self.write(self.vram_address, value);
 
                 let mut inc_ammount = 1;
                 if self
@@ -185,7 +185,7 @@ impl Ppu {
                 {
                     inc_ammount = 32;
                 }
-                self.vram_address.value = self.vram_address.value.wrapping_add(inc_ammount);
+                self.vram_address = self.vram_address.wrapping_add(inc_ammount);
             }
             _ => (), // TODO: impl rest of register writes
         };
@@ -294,7 +294,7 @@ impl Ppu {
                         // read more about incrementation: https://www.nesdev.org/wiki/PPU_scrolling#Wrapping_around
                         let mut coarse_x = self.vram_address.get_bitfield(COARSE_X);
                         if coarse_x == 31 {
-                            self.vram_address.value ^= BASE_NAMETABLE_ADDRESS_X;
+                            self.vram_address ^= BASE_NAMETABLE_ADDRESS_X;
                             coarse_x = 0;
                         } else {
                             coarse_x += 1;
@@ -310,7 +310,7 @@ impl Ppu {
                                 let mut coarse_y = self.vram_address.get_bitfield(COARSE_Y);
                                 if coarse_y == 29 {
                                     coarse_y = 0;
-                                    self.vram_address.value ^= BASE_NAMETABLE_ADDRESS_Y;
+                                    self.vram_address ^= BASE_NAMETABLE_ADDRESS_Y;
                                 } else if coarse_y == 31 {
                                     coarse_y = 0;
                                 } else {

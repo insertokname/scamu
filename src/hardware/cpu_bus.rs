@@ -25,11 +25,6 @@ impl CpuBus {
             ppu: None,
             last_read: Cell::new(0),
         }
-        // // used to pass nestest. will be implemented once APU is ok
-        // for addr in 0x4000..0x4020 {
-        //     bus.cpu_ram[addr] = 0xFF;
-        // }
-        // bus
     }
 
     pub fn insert_cartrige(&mut self, cartrige: Rc<RefCell<Cartrige>>) {
