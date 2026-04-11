@@ -1,5 +1,5 @@
 use crate::hardware::{
-    constants,
+    constants::cpu::flags,
     cpu::instructions::{INSTRUCTIONS_LOOKUP, InstructionTrait},
     cpu_bus::CpuBus,
 };
@@ -19,6 +19,8 @@ pub struct Cpu {
     total_cycles: u64,
     is_resetting: bool,
     is_jammed: bool, // Caused by the JAM instruction
+    pub is_triggered_nmi: bool,
+    pub is_triggered_irq: bool,
 }
 
 // TODO: impl interupts
@@ -30,11 +32,13 @@ impl Cpu {
             y: 0,
             program_counter: 0,
             stack_pointer: 0xFD,
-            status: constants::cpu_flags::UNUSED | constants::cpu_flags::INTERRUPT_DISABLE,
+            status: flags::UNUSED | flags::INTERRUPT_DISABLE,
             cycles_left: 0,
             total_cycles: 7,
             is_resetting: false,
             is_jammed: false,
+            is_triggered_irq: false,
+            is_triggered_nmi: false,
         }
     }
 
@@ -100,6 +104,10 @@ impl Cpu {
         self.cycles_left
     }
 
+    pub fn get_total_cycles(&self) -> u64 {
+        self.total_cycles
+    }
+
     pub fn get_next_instruction(&mut self, bus: &CpuBus) -> Box<dyn InstructionTrait> {
         let instruction_code = bus.read(self.program_counter);
 
@@ -119,6 +127,23 @@ impl Cpu {
 
         if self.is_resetting {
             self.is_resetting = false;
+        }
+
+        if self.is_triggered_nmi
+            || (self.is_triggered_irq && !self.get_flag(flags::INTERRUPT_DISABLE))
+        {
+            self.push_stack_u16(self.program_counter, bus);
+            self.push_stack(self.status, bus);
+            self.set_flag(flags::INTERRUPT_DISABLE, true);
+
+            if self.is_triggered_nmi {
+                self.program_counter = bus.read_u16(0xFFFA);
+            } else {
+                self.program_counter = bus.read_u16(0xFFFE);
+            }
+
+            self.is_triggered_nmi = false;
+            self.is_triggered_irq = false;
         }
 
         if self.cycles_left > 0 {
@@ -169,7 +194,6 @@ impl Cpu {
             // and the other ones are stored in the left_cycles and we
             // will artificially drain the left_cycles in the next ticks
             self.cycles_left -= 1;
-
             self.total_cycles = self.total_cycles + required_cycles as u64;
         }
     }

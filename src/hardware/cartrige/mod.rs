@@ -1,10 +1,10 @@
+pub mod cartrige_access;
 pub mod error;
 mod mappers;
-pub mod memory_access;
 
 use crate::hardware::{
-    cartrige::{error::CartrigeParseError, mappers::Mapper, memory_access::MemoryAccess},
-    constants::*,
+    cartrige::{cartrige_access::CartrigeAccess, error::CartrigeParseError, mappers::Mapper},
+    constants::cartrige::*,
 };
 
 pub type Result<T> = std::result::Result<T, CartrigeParseError>;
@@ -35,7 +35,6 @@ pub struct Cartrige {
     mapper: Box<dyn Mapper>,
     header: Header,
     prg_mem: Vec<u8>,
-    #[allow(dead_code)]
     chr_mem: Vec<u8>,
 }
 
@@ -93,21 +92,21 @@ impl Cartrige {
     }
 
     // TODO: impl writing to chr or prg mem
-    pub fn write(&mut self, memory_access: MemoryAccess, value: u8) {
-        let _ = self.mapper.map_write(memory_access, value);
+    pub fn write(&mut self, cartrige_access: CartrigeAccess, value: u8) {
+        let _ = self.mapper.map_write(cartrige_access, value);
     }
 
-    pub fn read(&mut self, memory_access: MemoryAccess) -> Option<u8> {
-        let addr = self.mapper.map_read(memory_access)?;
-        Some(self.prg_mem[addr as usize])
+    pub fn read(&mut self, cartrige_access: CartrigeAccess) -> Option<u8> {
+        let addr = self.mapper.map_read(cartrige_access.clone())?;
+        match cartrige_access {
+            CartrigeAccess::CpuAccess { .. } => Some(self.prg_mem[addr as usize]),
+            CartrigeAccess::PpuAccess { .. } => Some(self.chr_mem[addr as usize]),
+        }
     }
-}
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Mirroring {
-    Horizontal,
-    Vertical,
-    FourScreen,
+    pub fn map_nametable(&self, address: u16) -> u16 {
+        self.mapper.map_nametable(address)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -165,16 +164,6 @@ impl Header {
 
     pub fn has_battery_backed_ram(&self) -> bool {
         self.flags6 & FLAG6_BATTERY != 0
-    }
-
-    pub fn mirroring(&self) -> Mirroring {
-        if self.has_four_screen_vram() {
-            Mirroring::FourScreen
-        } else if self.get_nametable_arrangement() == 1 {
-            Mirroring::Vertical
-        } else {
-            Mirroring::Horizontal
-        }
     }
 
     pub fn has_four_screen_vram(&self) -> bool {

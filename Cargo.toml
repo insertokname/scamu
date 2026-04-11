@@ -8,5 +8,6 @@ name = "scamu"
 crate-type = ["staticlib", "dylib"]
 
 [dependencies]
+funty = "2.0.0"
 log = "0.4.28"
 thiserror = "2.0.17"

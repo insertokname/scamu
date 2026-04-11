@@ -1,6 +1,9 @@
 use crate::hardware::{
-    constants::cpu_flags::*,
-    cpu::{Cpu, addressing_modes::{AddressingMode, implementations::MemoryAddress}},
+    constants::cpu::flags::*,
+    cpu::{
+        Cpu,
+        addressing_modes::{AddressingMode, implementations::MemoryAddress},
+    },
     cpu_bus::CpuBus,
 };
 
@@ -159,16 +162,10 @@ pub(super) const BRK: Operation<()> = |cpu, bus, _| {
     cpu.is_resetting = true;
     cpu.program_counter += 1;
 
+    cpu.push_stack_u16(cpu.program_counter, bus);
+    cpu.push_stack(cpu.status | BREAK, bus);
+
     cpu.set_flag(INTERRUPT_DISABLE, true);
-    cpu.set_flag(BREAK, true);
-
-    let program_counter = cpu.program_counter;
-    cpu.push_stack_u16(program_counter, bus);
-
-    let mut status = cpu.status;
-    status |= BREAK | UNUSED;
-    cpu.push_stack(status, bus);
-
     cpu.program_counter = bus.read_u16(0xFFFE);
 };
 

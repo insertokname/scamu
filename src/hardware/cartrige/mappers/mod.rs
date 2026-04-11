@@ -1,5 +1,5 @@
 use crate::hardware::cartrige::{
-    Header, error::CartrigeParseError, mappers::implementations::*, memory_access::MemoryAccess,
+    Header, cartrige_access::CartrigeAccess, error::CartrigeParseError, mappers::implementations::*,
 };
 
 use super::Result;
@@ -10,8 +10,9 @@ pub(super) trait Mapper {
     fn new(header: Header) -> Self
     where
         Self: Sized;
-    fn map_write(&mut self, memory_access: MemoryAccess, value: u8) -> Option<u16>;
-    fn map_read(&mut self, memory_access: MemoryAccess) -> Option<u16>;
+    fn map_write(&mut self, cartrige_access: CartrigeAccess, value: u8) -> Option<u16>;
+    fn map_read(&mut self, cartrige_access: CartrigeAccess) -> Option<u16>;
+    fn map_nametable(&self, address: u16) -> u16;
 }
 
 pub(super) fn from_header(header: Header) -> Result<Box<dyn Mapper>> {
