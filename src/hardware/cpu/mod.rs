@@ -9,6 +9,19 @@ mod addressing_modes;
 mod instructions;
 mod operations;
 
+#[derive(Debug, Clone, Copy)]
+pub enum DmaStatus {
+    None,
+    Initialized {
+        page: u8,
+    },
+    Transfering {
+        page: u8,
+        index: u8,
+        fetched_value: u8,
+    },
+}
+
 pub struct Cpu {
     accumulator: u8,
     x: u8,
@@ -22,6 +35,7 @@ pub struct Cpu {
     is_jammed: bool, // Caused by the JAM instruction
     pub is_triggered_nmi: bool,
     pub is_triggered_irq: bool,
+    pub dma_status: DmaStatus,
 }
 
 // TODO: impl interupts
@@ -40,6 +54,7 @@ impl Cpu {
             is_jammed: false,
             is_triggered_irq: false,
             is_triggered_nmi: false,
+            dma_status: DmaStatus::None,
         }
     }
 

@@ -180,6 +180,7 @@ pub(super) static INSTRUCTIONS_LOOKUP: LazyLock<&'static [Box<dyn InstructionFac
 #[rustfmt::skip]
 fn get_instructions() -> Vec<Box<dyn InstructionFactoryTrait>> {
     // illegal ops from here https://www.masswerk.at/6502/6502_instruction_set.html
+    // recreation of this table (page 10): http://archive.6502.org/datasheets/rockwell_r650x_r651x.pdf
     instruction_factories![
         { BRK, IMPLICIT    , 7 }, { ORA, INDIRECT_X_OFFSET , 6 }, {*JAM, IMPLICIT , 1 }, {*SLO, INDIRECT_X_OFFSET ,8 }, {*NOP, ZERO_PAGE         , 3 }, { ORA, ZERO_PAGE         , 3 },{ ASL, ZERO_PAGE         , 5 }, {*SLO, ZERO_PAGE         , 5 }, { PHP, IMPLICIT, 3 }, { ORA, IMMEDIATE         , 2 }, { ASL, ACCUMULATOR, 2 }, {*ANC, IMMEDIATE         , 2 }, {*NOP, ABSOLUTE          , 4 }, { ORA, ABSOLUTE          , 4 }, { ASL, ABSOLUTE          , 6 }, {*SLO, ABSOLUTE          , 6 }, 
         { BPL, RELATIVE*   , 2 }, { ORA, INDIRECT_Y_OFFSET*, 5 }, {*JAM, IMPLICIT , 1 }, {*SLO, INDIRECT_Y_OFFSET ,8 }, {*NOP, ZERO_PAGE_X_OFFSET, 4 }, { ORA, ZERO_PAGE_X_OFFSET, 4 },{ ASL, ZERO_PAGE_X_OFFSET, 6 }, {*SLO, ZERO_PAGE_X_OFFSET, 6 }, { CLC, IMPLICIT, 2 }, { ORA, ABSOLUTE_Y_OFFSET*, 4 }, {*NOP, IMPLICIT   , 2 }, {*SLO, ABSOLUTE_Y_OFFSET , 7 }, {*NOP, ABSOLUTE_X_OFFSET*, 4 }, { ORA, ABSOLUTE_X_OFFSET*, 4 }, { ASL, ABSOLUTE_X_OFFSET , 7 }, {*SLO, ABSOLUTE_X_OFFSET , 7 },

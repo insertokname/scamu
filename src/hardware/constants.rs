@@ -100,6 +100,21 @@ pub mod ppu {
     }
 
     #[rustfmt::skip]
+    pub mod sprite_tile_id{
+        pub const BANK      : u8 = 0b00000001;
+        pub const TILE_ID   : u8 = 0b11111110;
+    }
+
+    #[rustfmt::skip]
+    pub mod sprite_attributes{
+        pub const PALLETE           : u8 = 0b00000011;
+        pub const UNUSED            : u8 = 0b00011100;
+        pub const PRIORITY          : u8 = 0b00100000;
+        pub const FLIP_HORIZONTALLY : u8 = 0b01000000;
+        pub const FLIP_VERTICALLY   : u8 = 0b10000000;
+    }
+
+    #[rustfmt::skip]
     pub const COLORS: [u32; 64] =
     [
         0x545454, 0x001e74, 0x081090, 0x300088, 0x440064, 0x5c0030, 0x540400, 0x3c1800,

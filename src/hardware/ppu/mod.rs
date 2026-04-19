@@ -5,9 +5,15 @@ use crate::hardware::{
     cartrige::{Cartrige, cartrige_access::CartrigeAccess},
     constants::{
         self,
-        ppu::{NAMETABLE_SIZE, control_flags, mask_flags, status_flags, vram_sections::*},
+        ppu::{
+            NAMETABLE_SIZE,
+            control_flags::{self, SPRITE_SIZE},
+            mask_flags, sprite_attributes, sprite_tile_id,
+            status_flags::{self, SPRITE_OVERFLOW},
+            vram_sections::*,
+        },
     },
-    cpu::Cpu,
+    cpu::{Cpu, DmaStatus},
     ppu::pallet_memory::PalletMemory,
 };
 
@@ -16,7 +22,48 @@ pub mod pallet_memory;
 pub type BackgroundSprite = [[u8; 8]; 8];
 pub type PatternTable = [[BackgroundSprite; 16]; 32];
 
-// TODO: open bus
+/// https://www.nesdev.org/wiki/PPU_OAM#OAM_(Sprite)_Data
+#[repr(C)]
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct Sprite {
+    y: u8,
+    tile_id: u8,
+    attributes: u8,
+    x: u8,
+}
+
+#[derive(Debug, Clone, PartialEq, Default)]
+pub enum SpriteEvalState {
+    #[default]
+    None,
+    Read,
+    Write {
+        fetched_byte: u8,
+    },
+    TransferRead {
+        transfer_byte_count: u8,
+    },
+    TransferWrite {
+        fetched_byte: u8,
+        transfer_byte_count: u8,
+    },
+    OverflowRead,
+    OverflowWrite {
+        fetched_byte: u8,
+    },
+    OverflowTransferRead {
+        transfer_byte_count: u8,
+    },
+    OverflowTransferWrite {
+        fetched_byte: u8,
+        transfer_byte_count: u8,
+    },
+    WaitingHBlankRead,
+    WaitingHBlankWrite {
+        fetched_byte: u8,
+    },
+}
+
 pub struct Ppu {
     cpu: Option<Rc<RefCell<Cpu>>>,
     cartrige: Option<Rc<RefCell<Cartrige>>>,
@@ -29,11 +76,15 @@ pub struct Ppu {
     temp_vram_address: u16,
     fine_x: u8,
     is_writing_low_byte: bool,
-    /// more info about this: https://www.nesdev.org/wiki/PPU_registers#:~:text=avoid%20wrong%20scrolling.-,the%20ppudata%20read%20buffer,-Reading%20from%20PPUDATA
+    /// more info about this: https://www.nesdev.org/wiki/PPU_registers#The_PPUDATA_read_buffer
     ppu_data_read_buffer: u8,
     pub control_register: u8,
     mask_register: u8,
     status_register: u8,
+    oam_address_register: u8,
+    pub oam: [u8; 256],
+    temp_oam: [u8; 32],
+    temp_oam_address: u8,
     renderer_sprite_id: u8,
     renderer_attribute_lsb: u8,
     renderer_attribute_msb: u8,
@@ -43,6 +94,14 @@ pub struct Ppu {
     renderer_shift_pattern_lsb: u16,
     renderer_shift_attribute_lsb: u16,
     renderer_shift_attribute_msb: u16,
+    // renderer_oam_latch: u8,
+    renderer_sprite_eval_state: SpriteEvalState,
+    renderer_temp_sprite: Sprite,
+    renderer_sprite_fetch_addr: u16,
+    renderer_sprite_shift_lsb: [u8; 8],
+    renderer_sprite_shift_msb: [u8; 8],
+    renderer_sprite_x_counter: [u8; 8],
+    renderer_sprite_attributes: [u8; 8],
     is_odd_frame: bool,
 }
 
@@ -53,7 +112,7 @@ impl Ppu {
             cartrige: None,
             scanline: 0,
             dot: 0,
-            pallet_memory: PalletMemory::new(),
+            pallet_memory: PalletMemory::default(),
             nametable_memory: [0; NAMETABLE_SIZE * 4],
             open_bus: 0,
             vram_address: 0,
@@ -64,6 +123,10 @@ impl Ppu {
             control_register: 0,
             mask_register: 0,
             status_register: 0,
+            oam_address_register: 0,
+            oam: [0; 256],
+            temp_oam: [0; 32],
+            temp_oam_address: 0,
             renderer_sprite_id: 0,
             renderer_attribute_lsb: 0,
             renderer_attribute_msb: 0,
@@ -73,6 +136,14 @@ impl Ppu {
             renderer_shift_pattern_lsb: 0,
             renderer_shift_attribute_lsb: 0,
             renderer_shift_attribute_msb: 0,
+            // renderer_oam_latch: 0,
+            renderer_sprite_eval_state: SpriteEvalState::default(),
+            renderer_temp_sprite: Sprite::default(),
+            renderer_sprite_fetch_addr: 0,
+            renderer_sprite_shift_lsb: [0; 8],
+            renderer_sprite_shift_msb: [0; 8],
+            renderer_sprite_x_counter: [0; 8],
+            renderer_sprite_attributes: [0; 8],
             is_odd_frame: false,
         }
     }
@@ -94,9 +165,6 @@ impl Ppu {
     }
 
     pub(crate) fn read_register_inner(&mut self, address: u16, peek: bool) -> u8 {
-        if address == 0x4014 {
-            todo!() // TODO: implement OAMDMA
-        }
         let out = match address % 0x8 {
             0x2 => {
                 if !peek {
@@ -110,9 +178,17 @@ impl Ppu {
                 }
                 out
             }
-            // TODO: OAMDATA
+            0x4 => {
+                // accoring to https://www.nesdev.org/wiki/PPU_sprite_evaluation
+                // in the first stage of sprite evaluation, oam addr always returns 0xFF
+                if matches!(self.scanline, (0..=239)) && matches!(self.dot, (1..=64)) {
+                    0xFF
+                } else {
+                    self.oam[self.oam_address_register as usize]
+                }
+            }
             0x7 => {
-                // TODO: pallete memory is handled differently: https://www.nesdev.org/wiki/PPU_registers#:~:text=the%20next%20read.-,reading%20palette%20ram,-Later%20PPUs%20added
+                // TODO: pallete memory is handled differently: https://www.nesdev.org/wiki/PPU_registers#Reading_palette_RAM
                 // if address < 0x3F00 {
                 let out = self.ppu_data_read_buffer;
                 if !peek {
@@ -134,8 +210,14 @@ impl Ppu {
         self.open_bus = value;
 
         if address == 0x4014 {
-            todo!() // TODO: implement OAMDMA
+            if let Some(cpu) = self.cpu.as_ref() {
+                // TODO: fix this stupid bullshit
+                unsafe {
+                    (*cpu.as_ptr()).dma_status = DmaStatus::Initialized { page: value };
+                }
+            }
         }
+
         match address % 0x8 {
             // TODO: IMPL PROPERLY
             0x0 => {
@@ -148,6 +230,13 @@ impl Ppu {
             }
             0x1 => {
                 self.mask_register = value;
+            }
+            0x3 => {
+                self.oam_address_register = value;
+            }
+            0x4 => {
+                self.oam[self.oam_address_register as usize] = value;
+                self.oam_address_register += 1;
             }
             0x5 => {
                 if !self.is_writing_low_byte {
@@ -230,19 +319,22 @@ impl Ppu {
     }
 
     pub fn tick(&mut self) -> Option<(u32, u32, u8, u8)> {
-        let enabled_rendering = self
+        let enabled_background_rendering = self
             .mask_register
-            .get_flag_enabled(mask_flags::ENABLE_BG_RENDERING)
-            || self
-                .mask_register
-                .get_flag_enabled(mask_flags::ENABLE_SPRITE_RENDERING);
+            .get_flag_enabled(mask_flags::ENABLE_BG_RENDERING);
+        let enabled_sprite_rendering = {
+            self.mask_register
+                .get_flag_enabled(mask_flags::ENABLE_SPRITE_RENDERING)
+        };
+        let enabled_rendering = enabled_background_rendering || enabled_sprite_rendering;
 
-        let scanline_visible = matches!(self.scanline, (0..240) | 261);
-        let dot_fetch = matches!(self.dot, (1..258) | (321..337));
+        let scanline_background_visible = matches!(self.scanline, (0..=239) | 261);
+        let dot_background_fetch = matches!(self.dot, (2..=256) | (321..=336));
 
+        // implementation of this: https://www.nesdev.org/w/images/default/4/4f/Ppu.svg
         if enabled_rendering {
-            // https://www.nesdev.org/w/images/default/4/4f/Ppu.svg
-            if scanline_visible && dot_fetch {
+            // bg rendering section
+            if scanline_background_visible && dot_background_fetch {
                 self.renderer_shift_attribute_lsb <<= 1;
                 self.renderer_shift_attribute_msb <<= 1;
                 self.renderer_shift_pattern_lsb <<= 1;
@@ -277,7 +369,7 @@ impl Ppu {
                     6 => {
                         // info on pattern tables: https://www.nesdev.org/wiki/PPU_pattern_tables
                         self.renderer_pattern_lsb = self.read_ppu_bus(
-                            self.get_background_nametable_address()
+                            self.get_background_pattern_address()
                                 + self.renderer_sprite_id as u16 * 16
                                 + self.vram_address.get_bitfield(FINE_Y),
                         )
@@ -285,7 +377,7 @@ impl Ppu {
                     // last tick of BG MSBIT + increment horizontaly/vertically
                     8 => {
                         self.renderer_pattern_msb = self.read_ppu_bus(
-                            self.get_background_nametable_address()
+                            self.get_background_pattern_address()
                                 + self.renderer_sprite_id as u16 * 16
                                 + self.vram_address.get_bitfield(FINE_Y)
                                 + 8,
@@ -339,12 +431,323 @@ impl Ppu {
                 }
             }
 
-            if scanline_visible && self.dot == 257 {
+            if scanline_background_visible && self.dot == 257 {
                 self.vram_address.set_bitmasked(
                     COARSE_X | BASE_NAMETABLE_ADDRESS_X,
                     self.temp_vram_address
                         .get_bitmasked(COARSE_X | BASE_NAMETABLE_ADDRESS_X),
                 );
+            }
+
+            // implementation of this: https://www.nesdev.org/wiki/PPU_sprite_evaluation
+            match self.scanline {
+                0..=239 => {
+                    if matches!(self.dot, (1..=256)) {
+                        for i in 0..8 {
+                            if self.renderer_sprite_x_counter[i] > 0 {
+                                self.renderer_sprite_x_counter[i] -= 1;
+                            } else {
+                                self.renderer_sprite_shift_lsb[i] <<= 1;
+                                self.renderer_sprite_shift_msb[i] <<= 1;
+                            }
+                        }
+                    };
+                    match self.dot {
+                        1..=64 => {
+                            if (self.dot - 1) % 2 == 1 {
+                                self.temp_oam[((self.dot - 1) / 2) as usize] = 0xFF;
+                            }
+                        }
+                        65..=256 => {
+                            if self.dot == 65 {
+                                self.renderer_sprite_eval_state = SpriteEvalState::Read;
+                                self.temp_oam_address = 0;
+                            }
+
+                            self.renderer_sprite_eval_state = match self.renderer_sprite_eval_state
+                            {
+                                SpriteEvalState::None => SpriteEvalState::None,
+                                SpriteEvalState::Read => {
+                                    let fetched_byte = self.oam[self.oam_address_register as usize];
+                                    SpriteEvalState::Write { fetched_byte }
+                                }
+                                SpriteEvalState::Write { fetched_byte } => {
+                                    self.temp_oam[self.temp_oam_address as usize] = fetched_byte;
+
+                                    let sprite_height =
+                                        if self.control_register.get_flag_enabled(SPRITE_SIZE) {
+                                            16
+                                        } else {
+                                            8
+                                        };
+
+                                    if (self.scanline & 0xFF) as u8 - fetched_byte < sprite_height {
+                                        self.temp_oam_address += 1;
+                                        self.oam_address_register += 1;
+                                        // 1a: copy leftover sprite data
+                                        SpriteEvalState::TransferRead {
+                                            transfer_byte_count: 3,
+                                        }
+                                    } else {
+                                        self.oam_address_register += 4;
+                                        // 2a: all sprites evaluated
+                                        if self.oam_address_register == 0 {
+                                            SpriteEvalState::WaitingHBlankRead
+                                        // 2b: more sprites to be evaluated
+                                        } else {
+                                            SpriteEvalState::Read
+                                        }
+                                    }
+                                }
+                                SpriteEvalState::TransferRead {
+                                    transfer_byte_count,
+                                } => {
+                                    let fetched_byte = self.oam[self.oam_address_register as usize];
+                                    SpriteEvalState::TransferWrite {
+                                        fetched_byte,
+                                        transfer_byte_count,
+                                    }
+                                }
+                                SpriteEvalState::TransferWrite {
+                                    fetched_byte,
+                                    transfer_byte_count,
+                                } => {
+                                    self.temp_oam[self.temp_oam_address as usize] = fetched_byte;
+
+                                    self.temp_oam_address += 1;
+                                    self.oam_address_register += 1;
+
+                                    // copy leftover bytes to secondary oam
+                                    if transfer_byte_count - 1 > 0 {
+                                        SpriteEvalState::TransferRead {
+                                            transfer_byte_count: transfer_byte_count - 1,
+                                        }
+                                    }
+                                    // 2a: all sprites evaluated, wait for hblank
+                                    else if self.oam_address_register == 0 {
+                                        SpriteEvalState::WaitingHBlankRead
+                                    }
+                                    // 2c: secondary oam full, check overflow
+                                    else if self.temp_oam_address == 32 {
+                                        SpriteEvalState::OverflowRead {}
+                                    }
+                                    // 2b: more sprites to be evaluated, go to 1
+                                    else {
+                                        SpriteEvalState::Read
+                                    }
+                                }
+                                SpriteEvalState::OverflowRead {} => {
+                                    let fetched_byte = self.oam[self.oam_address_register as usize];
+                                    SpriteEvalState::OverflowWrite { fetched_byte }
+                                }
+                                SpriteEvalState::OverflowWrite { fetched_byte } => {
+                                    let sprite_height =
+                                        if self.control_register.get_flag_enabled(SPRITE_SIZE) {
+                                            16
+                                        } else {
+                                            8
+                                        };
+
+                                    if (self.scanline & 0xFF) as u8 - fetched_byte < sprite_height {
+                                        self.status_register
+                                            .set_flag_enabled(SPRITE_OVERFLOW, true);
+                                        self.oam_address_register += 1;
+
+                                        if self.oam_address_register == 0 {
+                                            SpriteEvalState::WaitingHBlankRead
+                                        } else {
+                                            SpriteEvalState::OverflowTransferRead {
+                                                transfer_byte_count: 3,
+                                            }
+                                        }
+                                    } else {
+                                        let prev = self.oam_address_register;
+                                        // increment n and m separatley
+                                        self.oam_address_register =
+                                            ((self.oam_address_register + 4) & 0xFC)
+                                                | ((self.oam_address_register + 1) & 0x03);
+
+                                        // 3b: n overflowed, going to 4
+                                        if prev > self.oam_address_register {
+                                            SpriteEvalState::WaitingHBlankRead
+                                        // 3b: going back to 3 since n didn't overflow
+                                        } else {
+                                            SpriteEvalState::OverflowRead
+                                        }
+                                    }
+                                }
+                                SpriteEvalState::OverflowTransferRead {
+                                    transfer_byte_count,
+                                } => {
+                                    let fetched_byte = self.oam[self.oam_address_register as usize];
+                                    SpriteEvalState::OverflowTransferWrite {
+                                        fetched_byte,
+                                        transfer_byte_count,
+                                    }
+                                }
+                                SpriteEvalState::OverflowTransferWrite {
+                                    transfer_byte_count,
+                                    ..
+                                } => {
+                                    self.oam_address_register += 1;
+                                    if self.oam_address_register == 0
+                                        || transfer_byte_count - 1 == 0
+                                    {
+                                        SpriteEvalState::WaitingHBlankRead
+                                    } else {
+                                        SpriteEvalState::OverflowTransferRead {
+                                            transfer_byte_count: transfer_byte_count - 1,
+                                        }
+                                    }
+                                }
+                                SpriteEvalState::WaitingHBlankRead => {
+                                    let fetched_byte = self.oam[self.oam_address_register as usize];
+                                    SpriteEvalState::WaitingHBlankWrite { fetched_byte }
+                                }
+                                SpriteEvalState::WaitingHBlankWrite { .. } => {
+                                    self.oam_address_register += 4;
+                                    SpriteEvalState::WaitingHBlankRead
+                                }
+                            };
+                        }
+                        257..=320 => {
+                            if self.dot == 257 {
+                                self.temp_oam_address = 0;
+                                self.renderer_temp_sprite = Sprite::default();
+                                self.renderer_sprite_eval_state = SpriteEvalState::None;
+                            }
+
+                            self.oam_address_register = 0;
+
+                            let sprite_idx = ((self.dot - 257) / 8) as usize;
+                            let tick = (self.dot - 257) % 8;
+                            match tick {
+                                0 => {
+                                    self.renderer_temp_sprite.y =
+                                        self.temp_oam[self.temp_oam_address as usize];
+                                    self.temp_oam_address += 1;
+                                }
+                                1 => {
+                                    self.renderer_temp_sprite.tile_id =
+                                        self.temp_oam[self.temp_oam_address as usize];
+                                    self.temp_oam_address += 1;
+                                }
+                                2 => {
+                                    self.renderer_temp_sprite.attributes =
+                                        self.temp_oam[self.temp_oam_address as usize];
+                                    self.renderer_sprite_attributes[sprite_idx] =
+                                        self.renderer_temp_sprite.attributes;
+                                    self.temp_oam_address += 1;
+                                }
+                                3 => {
+                                    self.renderer_temp_sprite.x =
+                                        self.temp_oam[self.temp_oam_address as usize];
+                                    self.renderer_sprite_x_counter[sprite_idx] =
+                                        self.renderer_temp_sprite.x;
+                                }
+                                4 => {
+                                    let tall_sprites = self
+                                        .control_register
+                                        .get_flag_enabled(control_flags::SPRITE_SIZE);
+                                    let height: u8 = if tall_sprites { 16 } else { 8 };
+                                    let flipped_vertically = self
+                                        .renderer_temp_sprite
+                                        .attributes
+                                        .get_flag_enabled(sprite_attributes::FLIP_VERTICALLY);
+
+                                    let sprite_pattern_table_address = 0x1000
+                                        * if tall_sprites {
+                                            self.renderer_temp_sprite
+                                                .tile_id
+                                                .get_flag_enabled(sprite_tile_id::BANK)
+                                        } else {
+                                            self.control_register.get_flag_enabled(
+                                                control_flags::SPRITE_PATTERN_TABLE_ADDR,
+                                            )
+                                        } as u16;
+
+                                    let mut tile_id = if tall_sprites {
+                                        self.renderer_temp_sprite
+                                            .tile_id
+                                            .get_bitmasked(sprite_tile_id::TILE_ID)
+                                    } else {
+                                        self.renderer_temp_sprite.tile_id
+                                    } as u16;
+
+                                    let mut row =
+                                        self.scanline as u16 - self.renderer_temp_sprite.y as u16;
+
+                                    if tall_sprites && row >= 8 {
+                                        tile_id += 1;
+                                        row -= 8;
+                                    }
+
+                                    let row = if flipped_vertically {
+                                        (height - 1) as u16 - row
+                                    } else {
+                                        row
+                                    };
+
+                                    self.renderer_sprite_fetch_addr =
+                                        sprite_pattern_table_address + tile_id * 16 + row;
+                                }
+                                5 => {
+                                    let mut fetched_byte =
+                                        self.read_ppu_bus(self.renderer_sprite_fetch_addr);
+                                    if self
+                                        .renderer_temp_sprite
+                                        .attributes
+                                        .get_flag_enabled(sprite_attributes::FLIP_HORIZONTALLY)
+                                    {
+                                        fetched_byte = fetched_byte.reverse_bits();
+                                    }
+
+                                    let tall_sprites = self
+                                        .control_register
+                                        .get_flag_enabled(control_flags::SPRITE_SIZE);
+                                    let row =
+                                        self.scanline as u16 - self.renderer_temp_sprite.y as u16;
+                                    if !(row < if tall_sprites { 16 } else { 8 }) {
+                                        fetched_byte = 0;
+                                    }
+
+                                    self.renderer_sprite_shift_lsb[sprite_idx] = fetched_byte;
+                                }
+                                6 => {
+                                    self.renderer_sprite_fetch_addr += 8;
+                                }
+                                7 => {
+                                    let mut fetched_byte =
+                                        self.read_ppu_bus(self.renderer_sprite_fetch_addr);
+                                    if self
+                                        .renderer_temp_sprite
+                                        .attributes
+                                        .get_flag_enabled(sprite_attributes::FLIP_HORIZONTALLY)
+                                    {
+                                        fetched_byte = fetched_byte.reverse_bits();
+                                    }
+
+                                    let tall_sprites = self
+                                        .control_register
+                                        .get_flag_enabled(control_flags::SPRITE_SIZE);
+                                    let row =
+                                        self.scanline as u16 - self.renderer_temp_sprite.y as u16;
+                                    if !(row < if tall_sprites { 16 } else { 8 }) {
+                                        fetched_byte = 0;
+                                    }
+
+                                    self.renderer_sprite_shift_msb[sprite_idx] = fetched_byte;
+
+                                    self.renderer_temp_sprite = Sprite::default();
+                                    self.temp_oam_address += 1;
+                                }
+                                _ => unreachable!(),
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                _ => {}
             }
         }
 
@@ -376,9 +779,8 @@ impl Ppu {
         }
 
         let mut out = None;
-
-        if enabled_rendering && matches!(self.dot, (1..=256)) && matches!(self.scanline, (0..=239))
-        {
+        let pixel_in_display = matches!(self.dot, (1..=256)) && matches!(self.scanline, (0..=239));
+        if pixel_in_display && enabled_background_rendering {
             let fine_x_selector = 1 << (15 - self.fine_x);
 
             let pattern_lsb = self
@@ -398,6 +800,49 @@ impl Ppu {
                 .get_flag_enabled(fine_x_selector) as u8;
 
             let attrib = (attrib_msb << 1) | attrib_lsb;
+
+            out = Some((self.dot - 1, self.scanline, pattern, attrib));
+        }
+
+        if pixel_in_display && enabled_sprite_rendering {
+            let (_, _, bg_pattern, bg_attrib) = out.unwrap_or_else(|| (0, 0, 0, 0));
+
+            let (fg_pattern, fg_attrib, priority) = (0..8)
+                .find_map(|sprite_idx| {
+                    if self.renderer_sprite_x_counter[sprite_idx] != 0 {
+                        return None;
+                    }
+
+                    let lsb = self.renderer_sprite_shift_lsb[sprite_idx];
+                    let msb = self.renderer_sprite_shift_msb[sprite_idx];
+
+                    let pattern_lsb = lsb.get_bitfield(0x80);
+                    let pattern_msb = msb.get_bitfield(0x80);
+                    let pattern = (pattern_msb << 1) | pattern_lsb;
+
+                    let attributes = self.renderer_sprite_attributes[sprite_idx];
+                    let attrib = attributes.get_bitfield(sprite_attributes::PALLETE) + 4;
+                    let priority = attributes.get_flag_enabled(sprite_attributes::PRIORITY);
+
+                    if pattern != 0 {
+                        Some((pattern, attrib, priority))
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or_default();
+
+            let (pattern, attrib) = if bg_pattern == 0 {
+                (fg_pattern, fg_attrib)
+            } else if fg_pattern == 0 {
+                (bg_pattern, bg_attrib)
+            } else {
+                if priority {
+                    (bg_pattern, bg_attrib)
+                } else {
+                    (fg_pattern, fg_attrib)
+                }
+            };
 
             out = Some((self.dot - 1, self.scanline, pattern, attrib));
         }
@@ -440,7 +885,7 @@ impl Ppu {
         constants::ppu::COLORS[color_id as usize]
     }
 
-    fn get_background_nametable_address(&self) -> u16 {
+    fn get_background_pattern_address(&self) -> u16 {
         if self
             .control_register
             .get_flag_enabled(control_flags::BG_PATTERN_TABLE_ADDR)

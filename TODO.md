@@ -1,7 +1,7 @@
-- make all bitflags use 0b... or shifts as much as possible
 - impl PAL / other variants
 - move everything from cpu bus to cpu?
 - accurate memory fetching with ppu rendering
 - put all addressing mode reads to be optional
 - impl peek for cartriges
 - remove old shitty ppu methods
+- remove wrapping add calls

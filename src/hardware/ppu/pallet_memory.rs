@@ -4,18 +4,12 @@ use crate::hardware::constants::ppu::PALLET_SIZE;
 
 /// implementation of collor pallets from:
 /// https://www.nesdev.org/wiki/PPU_palettes
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct PalletMemory {
     pallet_memory: [u8; PALLET_SIZE],
 }
 
 impl PalletMemory {
-    pub fn new() -> Self {
-        Self {
-            pallet_memory: [0; PALLET_SIZE],
-        }
-    }
-
     /// `pallet_index` is the pallet to be used and `color_index` is
     /// the color within the pallet to be selected
     pub fn read_index(&self, pallet_index: u16, color_index: u16) -> u8 {

@@ -1,6 +1,11 @@
 use std::{cell::RefCell, rc::Rc};
 
-use crate::hardware::{cartrige::Cartrige, cpu::Cpu, cpu_bus::CpuBus, ppu::Ppu};
+use crate::hardware::{
+    cartrige::Cartrige,
+    cpu::{Cpu, DmaStatus},
+    cpu_bus::CpuBus,
+    ppu::Ppu,
+};
 
 pub struct Nes {
     total_cycles: u64,
@@ -66,7 +71,38 @@ impl Nes {
     pub fn tick(&mut self) -> Option<(u32, u32, u8, u8)> {
         let out = self.ppu.borrow_mut().tick();
         if self.total_cycles % 3 == 0 {
-            self.cpu.borrow_mut().tick(&mut self.bus);
+            let mut dma_status = self.cpu.borrow().dma_status.clone();
+            match &mut dma_status {
+                DmaStatus::None => self.cpu.borrow_mut().tick(&mut self.bus),
+                DmaStatus::Initialized { page } => {
+                    if self.total_cycles % 2 == 1 {
+                        self.cpu.borrow_mut().dma_status = DmaStatus::Transfering {
+                            page: *page,
+                            index: 0,
+                            fetched_value: 0,
+                        };
+                    }
+                }
+                DmaStatus::Transfering {
+                    page,
+                    index,
+                    fetched_value,
+                } => {
+                    if self.total_cycles % 2 == 0 {
+                        *fetched_value = self.bus.read(*index as u16 + *page as u16 * 0x100);
+                        self.cpu.borrow_mut().dma_status = dma_status;
+                    } else {
+                        self.ppu.borrow_mut().oam[*index as usize] = *fetched_value;
+
+                        if *index == 0xFF {
+                            self.cpu.borrow_mut().dma_status = DmaStatus::None;
+                        } else {
+                            *index += 1;
+                            self.cpu.borrow_mut().dma_status = dma_status;
+                        }
+                    }
+                }
+            }
         }
 
         // if self.total_cycles % 4 == 0 {

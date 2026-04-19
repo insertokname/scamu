@@ -70,7 +70,7 @@ impl CpuBus {
     pub fn write(&mut self, address: u16, value: u8) {
         match address {
             0x0..0x2000 => self.cpu_ram[address as usize & (constants::cpu::RAM_SIZE - 1)] = value,
-            0x2000..0x4000 => self
+            0x2000..0x4000 | 0x4014 => self
                 .ppu
                 .as_ref()
                 .map(|c| c.borrow_mut().write_register(address, value))
