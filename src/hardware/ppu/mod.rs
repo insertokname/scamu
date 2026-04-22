@@ -13,7 +13,7 @@ use crate::hardware::{
             vram_sections::*,
         },
     },
-    cpu::{Cpu, DmaStatus},
+    cpu::{Cpu, DmaState},
     ppu::pallet_memory::PalletMemory,
 };
 
@@ -32,10 +32,24 @@ pub struct Sprite {
     x: u8,
 }
 
-#[derive(Debug, Clone, PartialEq, Default)]
-pub enum SpriteEvalState {
+#[derive(Debug, Clone, Default)]
+pub enum SpriteRenderingState {
     #[default]
-    None,
+    Idle,
+    Initializing,
+    Evaluating {
+        eval_state: SpriteEvaluation,
+        temp_oam_address: u8,
+    },
+    Fetching {
+        temp_oam_address: u8,
+        temp_sprite: Sprite,
+        temp_fetch_addr: u16,
+    },
+}
+
+#[derive(Debug, Clone)]
+pub enum SpriteEvaluation {
     Read,
     Write {
         fetched_byte: u8,
@@ -84,7 +98,7 @@ pub struct Ppu {
     oam_address_register: u8,
     pub oam: [u8; 256],
     temp_oam: [u8; 32],
-    temp_oam_address: u8,
+    // -temp_oam_address: u8,
     renderer_sprite_id: u8,
     renderer_attribute_lsb: u8,
     renderer_attribute_msb: u8,
@@ -94,10 +108,11 @@ pub struct Ppu {
     renderer_shift_pattern_lsb: u16,
     renderer_shift_attribute_lsb: u16,
     renderer_shift_attribute_msb: u16,
+    renderer_sprite_state: SpriteRenderingState,
     // renderer_oam_latch: u8,
-    renderer_sprite_eval_state: SpriteEvalState,
-    renderer_temp_sprite: Sprite,
-    renderer_sprite_fetch_addr: u16,
+    // renderer_sprite_eval_state: SpriteEvaluation,
+    // renderer_temp_sprite: Sprite,
+    // renderer_sprite_fetch_addr: u16,
     renderer_sprite_shift_lsb: [u8; 8],
     renderer_sprite_shift_msb: [u8; 8],
     renderer_sprite_x_counter: [u8; 8],
@@ -126,7 +141,7 @@ impl Ppu {
             oam_address_register: 0,
             oam: [0; 256],
             temp_oam: [0; 32],
-            temp_oam_address: 0,
+            // temp_oam_address: 0,
             renderer_sprite_id: 0,
             renderer_attribute_lsb: 0,
             renderer_attribute_msb: 0,
@@ -137,9 +152,10 @@ impl Ppu {
             renderer_shift_attribute_lsb: 0,
             renderer_shift_attribute_msb: 0,
             // renderer_oam_latch: 0,
-            renderer_sprite_eval_state: SpriteEvalState::default(),
-            renderer_temp_sprite: Sprite::default(),
-            renderer_sprite_fetch_addr: 0,
+            renderer_sprite_state: SpriteRenderingState::default(),
+            // renderer_sprite_eval_state: SpriteEvaluation::default(),
+            // renderer_temp_sprite: Sprite::default(),
+            // renderer_sprite_fetch_addr: 0,
             renderer_sprite_shift_lsb: [0; 8],
             renderer_sprite_shift_msb: [0; 8],
             renderer_sprite_x_counter: [0; 8],
@@ -213,7 +229,7 @@ impl Ppu {
             if let Some(cpu) = self.cpu.as_ref() {
                 // TODO: fix this stupid bullshit
                 unsafe {
-                    (*cpu.as_ptr()).dma_status = DmaStatus::Initialized { page: value };
+                    (*cpu.as_ptr()).dma_status = DmaState::Initializing { page: value };
                 }
             }
         }
@@ -452,27 +468,47 @@ impl Ppu {
                             }
                         }
                     };
-                    match self.dot {
-                        1..=64 => {
+
+                    // update the sprite rendering state if required
+                    if !matches!(
+                        (&self.renderer_sprite_state, self.dot),
+                        (SpriteRenderingState::Initializing, 1..=64)
+                            | (SpriteRenderingState::Evaluating { .. }, 65..=256)
+                            | (SpriteRenderingState::Fetching { .. }, 257..=320)
+                    ) {
+                        self.renderer_sprite_state = match self.dot {
+                            1..=64 => SpriteRenderingState::Initializing,
+                            65..=256 => SpriteRenderingState::Evaluating {
+                                eval_state: SpriteEvaluation::Read,
+                                temp_oam_address: 0,
+                            },
+                            257..=320 => SpriteRenderingState::Fetching {
+                                temp_oam_address: 0,
+                                temp_sprite: Sprite::default(),
+                                temp_fetch_addr: 0,
+                            },
+                            _ => SpriteRenderingState::Idle,
+                        };
+                    }
+
+                    let mut state = self.renderer_sprite_state.clone();
+                    match &mut state {
+                        SpriteRenderingState::Initializing => {
                             if (self.dot - 1) % 2 == 1 {
                                 self.temp_oam[((self.dot - 1) / 2) as usize] = 0xFF;
                             }
                         }
-                        65..=256 => {
-                            if self.dot == 65 {
-                                self.renderer_sprite_eval_state = SpriteEvalState::Read;
-                                self.temp_oam_address = 0;
-                            }
-
-                            self.renderer_sprite_eval_state = match self.renderer_sprite_eval_state
-                            {
-                                SpriteEvalState::None => SpriteEvalState::None,
-                                SpriteEvalState::Read => {
+                        SpriteRenderingState::Evaluating {
+                            eval_state,
+                            temp_oam_address,
+                        } => {
+                            *eval_state = match *eval_state {
+                                SpriteEvaluation::Read => {
                                     let fetched_byte = self.oam[self.oam_address_register as usize];
-                                    SpriteEvalState::Write { fetched_byte }
+                                    SpriteEvaluation::Write { fetched_byte }
                                 }
-                                SpriteEvalState::Write { fetched_byte } => {
-                                    self.temp_oam[self.temp_oam_address as usize] = fetched_byte;
+                                SpriteEvaluation::Write { fetched_byte } => {
+                                    self.temp_oam[*temp_oam_address as usize] = fetched_byte;
 
                                     let sprite_height =
                                         if self.control_register.get_flag_enabled(SPRITE_SIZE) {
@@ -482,65 +518,66 @@ impl Ppu {
                                         };
 
                                     if (self.scanline & 0xFF) as u8 - fetched_byte < sprite_height {
-                                        self.temp_oam_address += 1;
+                                        *temp_oam_address += 1;
                                         self.oam_address_register += 1;
                                         // 1a: copy leftover sprite data
-                                        SpriteEvalState::TransferRead {
+                                        SpriteEvaluation::TransferRead {
                                             transfer_byte_count: 3,
                                         }
                                     } else {
+                                        let old = self.oam_address_register;
                                         self.oam_address_register += 4;
-                                        // 2a: all sprites evaluated
-                                        if self.oam_address_register == 0 {
-                                            SpriteEvalState::WaitingHBlankRead
+                                        // 2a: overflowed, all sprites evaluated
+                                        if old > self.oam_address_register {
+                                            SpriteEvaluation::WaitingHBlankRead
                                         // 2b: more sprites to be evaluated
                                         } else {
-                                            SpriteEvalState::Read
+                                            SpriteEvaluation::Read
                                         }
                                     }
                                 }
-                                SpriteEvalState::TransferRead {
+                                SpriteEvaluation::TransferRead {
                                     transfer_byte_count,
                                 } => {
                                     let fetched_byte = self.oam[self.oam_address_register as usize];
-                                    SpriteEvalState::TransferWrite {
+                                    SpriteEvaluation::TransferWrite {
                                         fetched_byte,
                                         transfer_byte_count,
                                     }
                                 }
-                                SpriteEvalState::TransferWrite {
+                                SpriteEvaluation::TransferWrite {
                                     fetched_byte,
                                     transfer_byte_count,
                                 } => {
-                                    self.temp_oam[self.temp_oam_address as usize] = fetched_byte;
+                                    self.temp_oam[*temp_oam_address as usize] = fetched_byte;
 
-                                    self.temp_oam_address += 1;
+                                    *temp_oam_address += 1;
                                     self.oam_address_register += 1;
 
                                     // copy leftover bytes to secondary oam
                                     if transfer_byte_count - 1 > 0 {
-                                        SpriteEvalState::TransferRead {
+                                        SpriteEvaluation::TransferRead {
                                             transfer_byte_count: transfer_byte_count - 1,
                                         }
                                     }
                                     // 2a: all sprites evaluated, wait for hblank
                                     else if self.oam_address_register == 0 {
-                                        SpriteEvalState::WaitingHBlankRead
+                                        SpriteEvaluation::WaitingHBlankRead
                                     }
                                     // 2c: secondary oam full, check overflow
-                                    else if self.temp_oam_address == 32 {
-                                        SpriteEvalState::OverflowRead {}
+                                    else if *temp_oam_address == 32 {
+                                        SpriteEvaluation::OverflowRead {}
                                     }
                                     // 2b: more sprites to be evaluated, go to 1
                                     else {
-                                        SpriteEvalState::Read
+                                        SpriteEvaluation::Read
                                     }
                                 }
-                                SpriteEvalState::OverflowRead {} => {
+                                SpriteEvaluation::OverflowRead {} => {
                                     let fetched_byte = self.oam[self.oam_address_register as usize];
-                                    SpriteEvalState::OverflowWrite { fetched_byte }
+                                    SpriteEvaluation::OverflowWrite { fetched_byte }
                                 }
-                                SpriteEvalState::OverflowWrite { fetched_byte } => {
+                                SpriteEvaluation::OverflowWrite { fetched_byte } => {
                                     let sprite_height =
                                         if self.control_register.get_flag_enabled(SPRITE_SIZE) {
                                             16
@@ -554,9 +591,9 @@ impl Ppu {
                                         self.oam_address_register += 1;
 
                                         if self.oam_address_register == 0 {
-                                            SpriteEvalState::WaitingHBlankRead
+                                            SpriteEvaluation::WaitingHBlankRead
                                         } else {
-                                            SpriteEvalState::OverflowTransferRead {
+                                            SpriteEvaluation::OverflowTransferRead {
                                                 transfer_byte_count: 3,
                                             }
                                         }
@@ -569,23 +606,23 @@ impl Ppu {
 
                                         // 3b: n overflowed, going to 4
                                         if prev > self.oam_address_register {
-                                            SpriteEvalState::WaitingHBlankRead
+                                            SpriteEvaluation::WaitingHBlankRead
                                         // 3b: going back to 3 since n didn't overflow
                                         } else {
-                                            SpriteEvalState::OverflowRead
+                                            SpriteEvaluation::OverflowRead
                                         }
                                     }
                                 }
-                                SpriteEvalState::OverflowTransferRead {
+                                SpriteEvaluation::OverflowTransferRead {
                                     transfer_byte_count,
                                 } => {
                                     let fetched_byte = self.oam[self.oam_address_register as usize];
-                                    SpriteEvalState::OverflowTransferWrite {
+                                    SpriteEvaluation::OverflowTransferWrite {
                                         fetched_byte,
                                         transfer_byte_count,
                                     }
                                 }
-                                SpriteEvalState::OverflowTransferWrite {
+                                SpriteEvaluation::OverflowTransferWrite {
                                     transfer_byte_count,
                                     ..
                                 } => {
@@ -593,71 +630,64 @@ impl Ppu {
                                     if self.oam_address_register == 0
                                         || transfer_byte_count - 1 == 0
                                     {
-                                        SpriteEvalState::WaitingHBlankRead
+                                        SpriteEvaluation::WaitingHBlankRead
                                     } else {
-                                        SpriteEvalState::OverflowTransferRead {
+                                        SpriteEvaluation::OverflowTransferRead {
                                             transfer_byte_count: transfer_byte_count - 1,
                                         }
                                     }
                                 }
-                                SpriteEvalState::WaitingHBlankRead => {
+                                SpriteEvaluation::WaitingHBlankRead => {
                                     let fetched_byte = self.oam[self.oam_address_register as usize];
-                                    SpriteEvalState::WaitingHBlankWrite { fetched_byte }
+                                    SpriteEvaluation::WaitingHBlankWrite { fetched_byte }
                                 }
-                                SpriteEvalState::WaitingHBlankWrite { .. } => {
+                                SpriteEvaluation::WaitingHBlankWrite { .. } => {
                                     self.oam_address_register += 4;
-                                    SpriteEvalState::WaitingHBlankRead
+                                    SpriteEvaluation::WaitingHBlankRead
                                 }
                             };
                         }
-                        257..=320 => {
-                            if self.dot == 257 {
-                                self.temp_oam_address = 0;
-                                self.renderer_temp_sprite = Sprite::default();
-                                self.renderer_sprite_eval_state = SpriteEvalState::None;
-                            }
-
+                        SpriteRenderingState::Fetching {
+                            temp_oam_address,
+                            temp_sprite,
+                            temp_fetch_addr,
+                        } => {
                             self.oam_address_register = 0;
 
                             let sprite_idx = ((self.dot - 257) / 8) as usize;
                             let tick = (self.dot - 257) % 8;
                             match tick {
                                 0 => {
-                                    self.renderer_temp_sprite.y =
-                                        self.temp_oam[self.temp_oam_address as usize];
-                                    self.temp_oam_address += 1;
+                                    temp_sprite.y = self.temp_oam[*temp_oam_address as usize];
+                                    *temp_oam_address += 1;
                                 }
                                 1 => {
-                                    self.renderer_temp_sprite.tile_id =
-                                        self.temp_oam[self.temp_oam_address as usize];
-                                    self.temp_oam_address += 1;
+                                    temp_sprite.tile_id = self.temp_oam[*temp_oam_address as usize];
+                                    *temp_oam_address += 1;
                                 }
                                 2 => {
-                                    self.renderer_temp_sprite.attributes =
-                                        self.temp_oam[self.temp_oam_address as usize];
+                                    temp_sprite.attributes =
+                                        self.temp_oam[*temp_oam_address as usize];
                                     self.renderer_sprite_attributes[sprite_idx] =
-                                        self.renderer_temp_sprite.attributes;
-                                    self.temp_oam_address += 1;
+                                        temp_sprite.attributes;
+                                    *temp_oam_address += 1;
                                 }
                                 3 => {
-                                    self.renderer_temp_sprite.x =
-                                        self.temp_oam[self.temp_oam_address as usize];
-                                    self.renderer_sprite_x_counter[sprite_idx] =
-                                        self.renderer_temp_sprite.x;
+                                    temp_sprite.x = self.temp_oam[*temp_oam_address as usize];
+                                    self.renderer_sprite_x_counter[sprite_idx] = temp_sprite.x;
                                 }
                                 4 => {
                                     let tall_sprites = self
                                         .control_register
                                         .get_flag_enabled(control_flags::SPRITE_SIZE);
                                     let height: u8 = if tall_sprites { 16 } else { 8 };
-                                    let flipped_vertically = self
-                                        .renderer_temp_sprite
+                                    let flipped_vertically = temp_sprite
                                         .attributes
                                         .get_flag_enabled(sprite_attributes::FLIP_VERTICALLY);
 
                                     let sprite_pattern_table_address = 0x1000
                                         * if tall_sprites {
-                                            self.renderer_temp_sprite
+                                            temp_sprite
                                                 .tile_id
                                                 .get_flag_enabled(sprite_tile_id::BANK)
                                         } else {
@@ -667,15 +697,12 @@ impl Ppu {
                                         } as u16;
 
                                     let mut tile_id = if tall_sprites {
-                                        self.renderer_temp_sprite
-                                            .tile_id
-                                            .get_bitmasked(sprite_tile_id::TILE_ID)
+                                        temp_sprite.tile_id.get_bitmasked(sprite_tile_id::TILE_ID)
                                     } else {
-                                        self.renderer_temp_sprite.tile_id
+                                        temp_sprite.tile_id
                                     } as u16;
 
-                                    let mut row =
-                                        self.scanline as u16 - self.renderer_temp_sprite.y as u16;
+                                    let mut row = self.scanline as u16 - temp_sprite.y as u16;
 
                                     if tall_sprites && row >= 8 {
                                         tile_id += 1;
@@ -688,14 +715,12 @@ impl Ppu {
                                         row
                                     };
 
-                                    self.renderer_sprite_fetch_addr =
+                                    *temp_fetch_addr =
                                         sprite_pattern_table_address + tile_id * 16 + row;
                                 }
                                 5 => {
-                                    let mut fetched_byte =
-                                        self.read_ppu_bus(self.renderer_sprite_fetch_addr);
-                                    if self
-                                        .renderer_temp_sprite
+                                    let mut fetched_byte = self.read_ppu_bus(*temp_fetch_addr);
+                                    if temp_sprite
                                         .attributes
                                         .get_flag_enabled(sprite_attributes::FLIP_HORIZONTALLY)
                                     {
@@ -705,8 +730,7 @@ impl Ppu {
                                     let tall_sprites = self
                                         .control_register
                                         .get_flag_enabled(control_flags::SPRITE_SIZE);
-                                    let row =
-                                        self.scanline as u16 - self.renderer_temp_sprite.y as u16;
+                                    let row = self.scanline as u16 - temp_sprite.y as u16;
                                     if !(row < if tall_sprites { 16 } else { 8 }) {
                                         fetched_byte = 0;
                                     }
@@ -714,13 +738,11 @@ impl Ppu {
                                     self.renderer_sprite_shift_lsb[sprite_idx] = fetched_byte;
                                 }
                                 6 => {
-                                    self.renderer_sprite_fetch_addr += 8;
+                                    *temp_fetch_addr += 8;
                                 }
                                 7 => {
-                                    let mut fetched_byte =
-                                        self.read_ppu_bus(self.renderer_sprite_fetch_addr);
-                                    if self
-                                        .renderer_temp_sprite
+                                    let mut fetched_byte = self.read_ppu_bus(*temp_fetch_addr);
+                                    if temp_sprite
                                         .attributes
                                         .get_flag_enabled(sprite_attributes::FLIP_HORIZONTALLY)
                                     {
@@ -730,22 +752,22 @@ impl Ppu {
                                     let tall_sprites = self
                                         .control_register
                                         .get_flag_enabled(control_flags::SPRITE_SIZE);
-                                    let row =
-                                        self.scanline as u16 - self.renderer_temp_sprite.y as u16;
+                                    let row = self.scanline as u16 - temp_sprite.y as u16;
                                     if !(row < if tall_sprites { 16 } else { 8 }) {
                                         fetched_byte = 0;
                                     }
 
                                     self.renderer_sprite_shift_msb[sprite_idx] = fetched_byte;
 
-                                    self.renderer_temp_sprite = Sprite::default();
-                                    self.temp_oam_address += 1;
+                                    *temp_sprite = Sprite::default();
+                                    *temp_oam_address += 1;
                                 }
                                 _ => unreachable!(),
                             }
                         }
-                        _ => {}
+                        SpriteRenderingState::Idle => {}
                     }
+                    self.renderer_sprite_state = state;
                 }
                 _ => {}
             }

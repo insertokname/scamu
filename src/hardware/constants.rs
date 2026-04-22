@@ -17,6 +17,20 @@ macro_rules! byte_size {
     };
 }
 
+pub mod controller {
+    #[rustfmt::skip]
+    pub mod buttons {
+        pub const A      :u8 = 0b00000001;
+        pub const B      :u8 = 0b00000010;
+        pub const SELECT :u8 = 0b00000100;
+        pub const START  :u8 = 0b00001000;
+        pub const UP     :u8 = 0b00010000;
+        pub const DOWN   :u8 = 0b00100000;
+        pub const LEFT   :u8 = 0b01000000;
+        pub const RIGHT  :u8 = 0b10000000;
+    }
+}
+
 pub mod cpu {
     pub const RAM_SIZE: usize = byte_size!(2 kb);
     pub const STACK_OFFSET: u16 = 0x100;

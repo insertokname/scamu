@@ -4,6 +4,7 @@ use std::{
 };
 
 use crate::hardware::{
+    bit_ops::BitOps,
     cartrige::{Cartrige, cartrige_access::CartrigeAccess},
     ppu::Ppu,
 };
@@ -15,6 +16,9 @@ pub struct CpuBus {
     cartrige: Option<Rc<RefCell<Cartrige>>>,
     ppu: Option<Rc<RefCell<Ppu>>>,
     last_read: Cell<u8>,
+    controller_state: [Cell<u8>; 2],
+    controller_shift: [Cell<u8>; 2],
+    controller_strobe: Cell<bool>,
 }
 
 impl CpuBus {
@@ -24,6 +28,9 @@ impl CpuBus {
             cartrige: None,
             ppu: None,
             last_read: Cell::new(0),
+            controller_state: std::array::from_fn(|_| Cell::new(0)),
+            controller_shift: std::array::from_fn(|_| Cell::new(0)),
+            controller_strobe: Cell::new(false),
         }
     }
 
@@ -52,6 +59,8 @@ impl CpuBus {
                 .as_ref()
                 .map(|c| c.borrow_mut().read_register_inner(address, peek))
                 .unwrap_or(0),
+            0x4016 => self.read_controller(0, peek),
+            0x4017 => self.read_controller(1, peek),
             0x4000..0x4020 => 0xFF, // TODO: impl apu
             0x4020.. => self
                 .cartrige
@@ -75,6 +84,17 @@ impl CpuBus {
                 .as_ref()
                 .map(|c| c.borrow_mut().write_register(address, value))
                 .unwrap_or(()),
+            0x4016 => {
+                let strobe = value & 1 != 0;
+                let prev_strobe = self.controller_strobe.replace(strobe);
+
+                if strobe || (prev_strobe && !strobe) {
+                    self.controller_state
+                        .iter()
+                        .zip(self.controller_shift.iter())
+                        .for_each(|(state, shift)| shift.set(state.get()));
+                }
+            }
             0x4000..0x4020 => (), // TODO: impl apu
             0x4020.. => self
                 .cartrige
@@ -111,5 +131,34 @@ impl CpuBus {
         for i in 0..memory.len() {
             self.write(start + i as u16, memory[i]);
         }
+    }
+
+    pub fn set_controller_button(&mut self, controller_index: usize, button: u8, pressed: bool) {
+        if controller_index >= self.controller_state.len() {
+            return;
+        }
+
+        let mut state = self.controller_state[controller_index].get();
+        state.set_flag_enabled(button, pressed);
+
+        self.controller_state[controller_index].set(state);
+        if self.controller_strobe.get() {
+            self.controller_shift[controller_index].set(state);
+        }
+    }
+
+    fn read_controller(&self, controller_index: usize, peek: bool) -> u8 {
+        if self.controller_strobe.get() {
+            return self.controller_state[controller_index].get() & 1;
+        }
+
+        let shift = self.controller_shift[controller_index].get();
+        let out = shift & 1;
+
+        if !peek {
+            self.controller_shift[controller_index].set((shift >> 1) | 0x80);
+        }
+
+        out
     }
 }

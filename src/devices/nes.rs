@@ -2,14 +2,14 @@ use std::{cell::RefCell, rc::Rc};
 
 use crate::hardware::{
     cartrige::Cartrige,
-    cpu::{Cpu, DmaStatus},
+    cpu::{Cpu, DmaState},
     cpu_bus::CpuBus,
     ppu::Ppu,
 };
 
 pub struct Nes {
     total_cycles: u64,
-    bus: CpuBus,
+    pub bus: CpuBus,
     pub cpu: Rc<RefCell<Cpu>>,
     pub ppu: Rc<RefCell<Ppu>>,
     cartrige: Option<Rc<RefCell<Cartrige>>>,
@@ -73,17 +73,17 @@ impl Nes {
         if self.total_cycles % 3 == 0 {
             let mut dma_status = self.cpu.borrow().dma_status.clone();
             match &mut dma_status {
-                DmaStatus::None => self.cpu.borrow_mut().tick(&mut self.bus),
-                DmaStatus::Initialized { page } => {
+                DmaState::None => self.cpu.borrow_mut().tick(&mut self.bus),
+                DmaState::Initializing { page } => {
                     if self.total_cycles % 2 == 1 {
-                        self.cpu.borrow_mut().dma_status = DmaStatus::Transfering {
+                        self.cpu.borrow_mut().dma_status = DmaState::Transfering {
                             page: *page,
                             index: 0,
                             fetched_value: 0,
                         };
                     }
                 }
-                DmaStatus::Transfering {
+                DmaState::Transfering {
                     page,
                     index,
                     fetched_value,
@@ -95,7 +95,7 @@ impl Nes {
                         self.ppu.borrow_mut().oam[*index as usize] = *fetched_value;
 
                         if *index == 0xFF {
-                            self.cpu.borrow_mut().dma_status = DmaStatus::None;
+                            self.cpu.borrow_mut().dma_status = DmaState::None;
                         } else {
                             *index += 1;
                             self.cpu.borrow_mut().dma_status = dma_status;
