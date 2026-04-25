@@ -96,8 +96,8 @@ pub mod ppu {
     #[rustfmt::skip]
     pub mod mask_flags {
         pub const GRAYSCALE                 : u8 = 0b00000001;
-        pub const SHOW_TOP_LEFT_BACKGROUND  : u8 = 0b00000010;
-        pub const SHOW_TOP_LEFT_SPRITE      : u8 = 0b00000100;
+        pub const SHOW_LEFTMOST_BACKGROUND  : u8 = 0b00000010;
+        pub const SHOW_LEFTMOST_SPRITE      : u8 = 0b00000100;
         pub const ENABLE_BG_RENDERING       : u8 = 0b00001000;
         pub const ENABLE_SPRITE_RENDERING   : u8 = 0b00010000;
         pub const EMPHASIZE_RED             : u8 = 0b00100000;

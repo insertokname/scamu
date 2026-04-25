@@ -8,8 +8,9 @@ use crate::hardware::{
         ppu::{
             NAMETABLE_SIZE,
             control_flags::{self, SPRITE_SIZE},
-            mask_flags, sprite_attributes, sprite_tile_id,
-            status_flags::{self, SPRITE_OVERFLOW},
+            mask_flags::{self, SHOW_LEFTMOST_BACKGROUND, SHOW_LEFTMOST_SPRITE},
+            sprite_attributes, sprite_tile_id,
+            status_flags::{self, SPRITE_0_HIT, SPRITE_OVERFLOW},
             vram_sections::*,
         },
     },
@@ -117,6 +118,7 @@ pub struct Ppu {
     renderer_sprite_shift_msb: [u8; 8],
     renderer_sprite_x_counter: [u8; 8],
     renderer_sprite_attributes: [u8; 8],
+    renderer_sprite_orig_indexes: [u8; 8],
     is_odd_frame: bool,
 }
 
@@ -160,6 +162,7 @@ impl Ppu {
             renderer_sprite_shift_msb: [0; 8],
             renderer_sprite_x_counter: [0; 8],
             renderer_sprite_attributes: [0; 8],
+            renderer_sprite_orig_indexes: [0; 8],
             is_odd_frame: false,
         }
     }
@@ -308,7 +311,6 @@ impl Ppu {
                 self.nametable_memory[self.map_nametable_address(address) as usize - 0x2000]
             }
             0x3F00..0x4000 => {
-                println!("accessing 1");
                 self.pallet_memory.read_address(address)
             }
             _ => 0,
@@ -518,6 +520,9 @@ impl Ppu {
                                         };
 
                                     if (self.scanline & 0xFF) as u8 - fetched_byte < sprite_height {
+                                        self.renderer_sprite_orig_indexes
+                                            [(*temp_oam_address / 4) as usize] =
+                                            self.oam_address_register / 4;
                                         *temp_oam_address += 1;
                                         self.oam_address_register += 1;
                                         // 1a: copy leftover sprite data
@@ -829,7 +834,7 @@ impl Ppu {
         if pixel_in_display && enabled_sprite_rendering {
             let (_, _, bg_pattern, bg_attrib) = out.unwrap_or_else(|| (0, 0, 0, 0));
 
-            let (fg_pattern, fg_attrib, priority) = (0..8)
+            let (fg_pattern, fg_attrib, priority, orig_index, indx) = (0..8)
                 .find_map(|sprite_idx| {
                     if self.renderer_sprite_x_counter[sprite_idx] != 0 {
                         return None;
@@ -837,6 +842,7 @@ impl Ppu {
 
                     let lsb = self.renderer_sprite_shift_lsb[sprite_idx];
                     let msb = self.renderer_sprite_shift_msb[sprite_idx];
+                    let orig_index = self.renderer_sprite_orig_indexes[sprite_idx];
 
                     let pattern_lsb = lsb.get_bitfield(0x80);
                     let pattern_msb = msb.get_bitfield(0x80);
@@ -847,12 +853,28 @@ impl Ppu {
                     let priority = attributes.get_flag_enabled(sprite_attributes::PRIORITY);
 
                     if pattern != 0 {
-                        Some((pattern, attrib, priority))
+                        Some((pattern, attrib, priority, orig_index, sprite_idx))
                     } else {
                         None
                     }
                 })
                 .unwrap_or_default();
+
+            let leftmost_rendering = self
+                .status_register
+                .get_flag_enabled(SHOW_LEFTMOST_BACKGROUND)
+                && self.status_register.get_flag_enabled(SHOW_LEFTMOST_SPRITE);
+
+            if orig_index == 0
+                && enabled_rendering
+                && bg_pattern != 0
+                && fg_pattern != 0
+                && self.dot != 255
+                && !self.status_register.get_flag_enabled(SPRITE_0_HIT)
+                && (leftmost_rendering || !matches!(self.dot, 0..=7))
+            {
+                self.status_register.set_flag_enabled(SPRITE_0_HIT, true);
+            }
 
             let (pattern, attrib) = if bg_pattern == 0 {
                 (fg_pattern, fg_attrib)
