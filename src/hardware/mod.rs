@@ -1,3 +1,4 @@
+pub mod apu;
 pub mod bit_ops;
 pub mod cartrige;
 pub mod constants;

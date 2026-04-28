@@ -5,9 +5,10 @@ edition = "2024"
 
 [lib]
 name = "scamu"
-crate-type = ["staticlib", "dylib"]
+crate-type = ["rlib", "staticlib", "dylib"]
 
 [dependencies]
+blip_buf = "0.1.6"
 funty = "2.0.0"
 log = "0.4.28"
 thiserror = "2.0.17"

@@ -1,9 +1,11 @@
 use std::{
     cell::{Cell, RefCell},
     rc::Rc,
+    sync::{Arc, Mutex},
 };
 
 use crate::hardware::{
+    apu::Apu,
     bit_ops::BitOps,
     cartrige::{Cartrige, cartrige_access::CartrigeAccess},
     ppu::Ppu,
@@ -14,8 +16,9 @@ use super::constants;
 pub struct CpuBus {
     cpu_ram: [u8; constants::cpu::RAM_SIZE],
     cartrige: Option<Rc<RefCell<Cartrige>>>,
+    apu: Option<Arc<Mutex<Apu>>>,
     ppu: Option<Rc<RefCell<Ppu>>>,
-    last_read: Cell<u8>,
+    open_bus: Cell<u8>,
     controller_state: [Cell<u8>; 2],
     controller_shift: [Cell<u8>; 2],
     controller_strobe: Cell<bool>,
@@ -26,8 +29,9 @@ impl CpuBus {
         Self {
             cpu_ram: [0; constants::cpu::RAM_SIZE],
             cartrige: None,
+            apu: None,
             ppu: None,
-            last_read: Cell::new(0),
+            open_bus: Cell::new(0),
             controller_state: std::array::from_fn(|_| Cell::new(0)),
             controller_shift: std::array::from_fn(|_| Cell::new(0)),
             controller_strobe: Cell::new(false),
@@ -40,6 +44,10 @@ impl CpuBus {
 
     pub fn connect_ppu(&mut self, ppu: Rc<RefCell<Ppu>>) {
         self.ppu = Some(ppu);
+    }
+
+    pub fn connect_apu(&mut self, apu: Arc<Mutex<Apu>>) {
+        self.apu = Some(apu);
     }
 
     pub fn read(&self, address: u16) -> u8 {
@@ -61,18 +69,25 @@ impl CpuBus {
                 .unwrap_or(0),
             0x4016 => self.read_controller(0, peek),
             0x4017 => self.read_controller(1, peek),
-            0x4000..0x4020 => 0xFF, // TODO: impl apu
+            0x4000..0x4020 => self
+                .apu
+                .as_ref()
+                .map(|a| a.lock().unwrap().read_register(address, peek))
+                .unwrap_or(self.open_bus.get()),
             0x4020.. => self
                 .cartrige
                 .as_ref()
                 .map(|c| {
                     c.borrow_mut()
                         .read(CartrigeAccess::CpuAccess { address })
-                        .unwrap_or_else(|| self.last_read.get())
+                        .unwrap_or_else(|| self.open_bus.get())
                 })
                 .unwrap_or(0x0),
         };
-        self.last_read.set(result);
+
+        if !peek {
+            self.open_bus.set(result);
+        }
         return result;
     }
 
@@ -95,7 +110,11 @@ impl CpuBus {
                         .for_each(|(state, shift)| shift.set(state.get()));
                 }
             }
-            0x4000..0x4020 => (), // TODO: impl apu
+            0x4000..0x4020 => self
+                .apu
+                .as_ref()
+                .map(|a| a.lock().unwrap().write_register(address, value))
+                .unwrap_or(()),
             0x4020.. => self
                 .cartrige
                 .as_ref()

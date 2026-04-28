@@ -3,6 +3,12 @@
 version = 4
 
 [[package]]
+name = "blip_buf"
+version = "0.1.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d01761ce5061c5345c211c47958ee76989241021a9e3c16d3c0a35a309462fb5"
+
+[[package]]
 name = "funty"
 version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -36,6 +42,7 @@ dependencies = [
 name = "scamu"
 version = "0.1.0"
 dependencies = [
+ "blip_buf",
  "funty",
  "log",
  "thiserror",

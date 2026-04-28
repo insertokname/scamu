@@ -17,6 +17,12 @@ macro_rules! byte_size {
     };
 }
 
+pub mod clock_rates {
+    pub const MASTER_CLOCK: u64 = 21_477_272;
+    pub const CPU_CLOCK: u64 = MASTER_CLOCK / 12;
+    pub const SAMPLE_RATE: u64 = 44_100;
+}
+
 pub mod controller {
     #[rustfmt::skip]
     pub mod buttons {
@@ -140,6 +146,68 @@ pub mod ppu {
         0xeceeec, 0xa8ccec, 0xbcbcec, 0xd4b2ec, 0xecaeec, 0xecaed4, 0xecb4b0, 0xe4c490,
         0xccd278, 0xb4de78, 0xa8e290, 0x98e2b4, 0xa0d6e4, 0xa0a2a0, 0x000000, 0x000000,
     ];
+}
+
+pub mod apu {
+    // implementation of these https://www.nesdev.org/wiki/APU_Pulse#Registers
+    #[rustfmt::skip]
+    pub mod register0_flags{
+        pub const ENVELOPE_VOLUME       : u8 = 0b00001111;
+        pub const IS_CONSTANT_VOLUME    : u8 = 0b00010000;
+        pub const LENGTH_COUNTER_HALT   : u8 = 0b00100000;
+        pub const LOOP                  : u8 = 0b00100000;
+        pub const DUTY_CYCLE            : u8 = 0b11000000;
+    }
+
+    #[rustfmt::skip]
+    pub mod register1_flags{
+        pub const SHIFT_COUNT           : u8 = 0b00000111;
+        pub const NEGATE                : u8 = 0b00001000;
+        pub const DIVIDER_PERIOD        : u8 = 0b01110000;
+        pub const ENABLED               : u8 = 0b10000000;
+    }
+
+    #[rustfmt::skip]
+    pub mod register2_flags{
+        pub const TIMER_LOW             : u8 = 0b11111111;
+    }
+
+    #[rustfmt::skip]
+    pub mod register3_flags{
+        pub const TIMER_HIGH            : u8 = 0b00000111;
+        pub const LENGTH_COUNTER_LOAD   : u8 = 0b11111000;
+    }
+
+    #[rustfmt::skip]
+    pub mod status_register{
+        pub const ENABLE_PULSE1         : u8 = 0b00000001;
+        pub const ENABLE_PULSE2         : u8 = 0b00000010;
+        pub const FRAME_INTERRUPT       : u8 = 0b01000000;
+    }
+
+    #[rustfmt::skip]
+    pub mod frame_counter_register{
+        pub const SEQUENCER_MODE        : u8 = 0b10000000;
+        pub const INTERRUPT_INHIBIT     : u8 = 0b01000000;
+    }
+
+    pub const PULSE_WAVEFORMS: [u8; 4] = [
+        0b00000001, // 12.5%
+        0b00000011, // 25%
+        0b00001111, // 50%
+        0b11111100, // 75%
+    ];
+
+    /// this is the table: https://www.nesdev.org/wiki/APU_Length_Counter
+    #[rustfmt::skip]
+    pub const LENGTH_COUNTER_TABLE: [u8; 32] = [
+        10, 254, 20, 2 , 40, 4 , 80, 6 , 160, 8 , 60, 10, 14, 12, 26, 14, 
+        12, 16 , 24, 18, 48, 20, 96, 22, 192, 24, 72, 26, 16, 28, 32, 30,
+    ];
+
+    pub const BLIP_FRAME_SIZE: u32 = 800;
+    pub const BLIP_BUFFER_SIZE: u32 = 1024;
+    pub const BLIP_SCALE: f32 = 32_767.0;
 }
 
 // #[rustfmt::skip]

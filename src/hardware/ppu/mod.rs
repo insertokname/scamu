@@ -310,9 +310,7 @@ impl Ppu {
             0x2000..0x3F00 => {
                 self.nametable_memory[self.map_nametable_address(address) as usize - 0x2000]
             }
-            0x3F00..0x4000 => {
-                self.pallet_memory.read_address(address)
-            }
+            0x3F00..0x4000 => self.pallet_memory.read_address(address),
             _ => 0,
         };
         return result;
@@ -834,7 +832,7 @@ impl Ppu {
         if pixel_in_display && enabled_sprite_rendering {
             let (_, _, bg_pattern, bg_attrib) = out.unwrap_or_else(|| (0, 0, 0, 0));
 
-            let (fg_pattern, fg_attrib, priority, orig_index, indx) = (0..8)
+            let (fg_pattern, fg_attrib, priority, orig_index) = (0..8)
                 .find_map(|sprite_idx| {
                     if self.renderer_sprite_x_counter[sprite_idx] != 0 {
                         return None;
@@ -853,7 +851,7 @@ impl Ppu {
                     let priority = attributes.get_flag_enabled(sprite_attributes::PRIORITY);
 
                     if pattern != 0 {
-                        Some((pattern, attrib, priority, orig_index, sprite_idx))
+                        Some((pattern, attrib, priority, orig_index))
                     } else {
                         None
                     }

@@ -9,8 +9,9 @@ mod addressing_modes;
 mod instructions;
 mod operations;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Default, Debug, Clone, Copy)]
 pub enum DmaState {
+    #[default]
     None,
     Initializing {
         page: u8,
@@ -22,6 +23,7 @@ pub enum DmaState {
     },
 }
 
+#[derive(Debug, Clone)]
 pub struct Cpu {
     accumulator: u8,
     x: u8,
@@ -113,7 +115,7 @@ impl Cpu {
     }
 
     pub fn get_next_instruction(&mut self, bus: &CpuBus) -> Box<dyn InstructionTrait> {
-        let instruction_code = bus.read(self.program_counter);
+        let instruction_code = bus.peek(self.program_counter);
 
         self.program_counter += 1;
 
@@ -154,7 +156,7 @@ impl Cpu {
             self.cycles_left -= 1;
         } else {
             let instruction_location = self.program_counter;
-            let instruction_code = bus.read(self.program_counter);
+            let instruction_code = bus.peek(self.program_counter);
 
             self.program_counter += 1;
 
@@ -169,7 +171,7 @@ impl Cpu {
             let length = 1 + next_instruction.next_instruction_offset() as usize;
             let mut bytes = Vec::with_capacity(length);
             for i in 0..length {
-                bytes.push(bus.read(instruction_location + i as u16));
+                bytes.push(bus.peek(instruction_location + i as u16));
             }
             let byte_str = match length {
                 1 => format!("{:02X}      ", bytes[0]),

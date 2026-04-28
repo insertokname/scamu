@@ -1,6 +1,11 @@
-use std::{cell::RefCell, rc::Rc};
+use std::{
+    cell::RefCell,
+    rc::Rc,
+    sync::{Arc, Mutex},
+};
 
 use crate::hardware::{
+    apu::Apu,
     cartrige::Cartrige,
     cpu::{Cpu, DmaState},
     cpu_bus::CpuBus,
@@ -12,6 +17,7 @@ pub struct Nes {
     pub bus: CpuBus,
     pub cpu: Rc<RefCell<Cpu>>,
     pub ppu: Rc<RefCell<Ppu>>,
+    pub apu: Arc<Mutex<Apu>>,
     cartrige: Option<Rc<RefCell<Cartrige>>>,
 }
 
@@ -20,13 +26,17 @@ impl Nes {
         let mut bus = CpuBus::new();
         let cpu = Rc::new(RefCell::new(Cpu::new()));
         let ppu = Rc::new(RefCell::new(Ppu::new()));
+        let apu = Arc::new(Mutex::new(Apu::new()));
         bus.connect_ppu(ppu.clone());
+        bus.connect_apu(apu.clone());
+        apu.lock().unwrap().connect_cpu(cpu.clone());
         ppu.borrow_mut().connect_cpu(cpu.clone());
         Self {
             total_cycles: 0,
             bus,
-            cpu: cpu,
-            ppu: ppu,
+            cpu,
+            ppu,
+            apu,
             cartrige: None,
         }
     }
@@ -38,10 +48,13 @@ impl Nes {
             bus: CpuBus::new(),
             cpu: Rc::new(RefCell::new(Cpu::new())),
             ppu: Rc::new(RefCell::new(Ppu::new())),
+            apu: Arc::new(Mutex::new(Apu::new())),
             cartrige: Some(cartrige_rc.clone()),
         };
         out.bus.insert_cartrige(cartrige_rc.clone());
         out.bus.connect_ppu(out.ppu.clone());
+        out.bus.connect_apu(out.apu.clone());
+        out.apu.lock().unwrap().connect_cpu(out.cpu.clone());
         out.ppu.borrow_mut().insert_cartrige(cartrige_rc);
         out.ppu.borrow_mut().connect_cpu(out.cpu.clone());
         out
@@ -71,6 +84,7 @@ impl Nes {
     pub fn tick(&mut self) -> Option<(u32, u32, u8, u8)> {
         let out = self.ppu.borrow_mut().tick();
         if self.total_cycles % 3 == 0 {
+            self.apu.lock().unwrap().tick();
             let mut dma_status = self.cpu.borrow().dma_status.clone();
             match &mut dma_status {
                 DmaState::None => self.cpu.borrow_mut().tick(&mut self.bus),
