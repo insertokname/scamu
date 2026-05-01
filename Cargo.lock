@@ -3,6 +3,17 @@
 version = 4
 
 [[package]]
+name = "better_default"
+version = "1.0.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7b9a5040dce49a7642c97ccb1ae59567098967b5d52c29773f1299a42d23bb39"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "blip_buf"
 version = "0.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -42,6 +53,7 @@ dependencies = [
 name = "scamu"
 version = "0.1.0"
 dependencies = [
+ "better_default",
  "blip_buf",
  "funty",
  "log",

@@ -5,3 +5,6 @@
 - impl peek for cartriges
 - remove old shitty ppu methods
 - remove wrapping add calls
+- use better default for all structs
+- move from all apu components being iterators
+- fix apu audio delay when game is faster than 60 fps

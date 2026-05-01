@@ -3,7 +3,10 @@ use std::{cell::RefCell, collections::VecDeque, rc::Rc};
 use blip_buf::BlipBuf;
 
 use crate::hardware::{
-    apu::pulse_channel::{PulseChannel, PulseChannelType},
+    apu::{
+        pulse_channel::{PulseChannel, PulseChannelType},
+        triangle_channel::TriangleChannel,
+    },
     bit_ops::BitOps,
     constants::{
         apu::{
@@ -18,6 +21,7 @@ pub mod envelope;
 pub mod length_counter;
 pub mod pulse_channel;
 pub mod sweep;
+pub mod triangle_channel;
 
 #[derive(Default, Clone, Copy, Debug)]
 pub struct ApuTick {
@@ -30,6 +34,7 @@ pub struct ApuTick {
 pub struct Apu {
     pulse1: PulseChannel,
     pulse2: PulseChannel,
+    triangle: TriangleChannel,
 
     sequencer_mode_flag: bool,
     interrupt_inhibit_flag: bool,
@@ -46,13 +51,14 @@ pub struct Apu {
     sample_queue: VecDeque<f32>,
 }
 
-impl Default for Apu {
-    fn default() -> Self {
+impl Apu {
+    pub fn new() -> Self {
         let mut blip = BlipBuf::new(BLIP_BUFFER_SIZE);
         blip.set_rates(CPU_CLOCK as f64, SAMPLE_RATE as f64);
         Self {
-            pulse1: PulseChannel::default(),
-            pulse2: PulseChannel::default(),
+            pulse1: PulseChannel::new(PulseChannelType::Pulse1),
+            pulse2: PulseChannel::new(PulseChannelType::Pulse2),
+            triangle: TriangleChannel::default(),
             sequencer_mode_flag: false,
             interrupt_inhibit_flag: false,
             frame_interrupt_flag: false,
@@ -64,16 +70,6 @@ impl Default for Apu {
             blip_clock: 0,
             prev_blip_output: 0,
             sample_queue: VecDeque::with_capacity(BLIP_BUFFER_SIZE as usize),
-        }
-    }
-}
-
-impl Apu {
-    pub fn new() -> Self {
-        Self {
-            pulse1: PulseChannel::new(PulseChannelType::Pulse1),
-            pulse2: PulseChannel::new(PulseChannelType::Pulse2),
-            ..Self::default()
         }
     }
 
@@ -105,11 +101,14 @@ impl Apu {
         match address {
             0x4000..0x4004 => self.pulse1.write_register(address, value),
             0x4004..0x4008 => self.pulse2.write_register(address, value),
+            0x4008..0x400C => self.triangle.write_register(address, value),
             0x4015 => {
                 self.pulse1
                     .set_enabled(value.get_flag_enabled(status_register::ENABLE_PULSE1));
                 self.pulse2
                     .set_enabled(value.get_flag_enabled(status_register::ENABLE_PULSE2));
+                self.triangle
+                    .set_enabled(value.get_flag_enabled(status_register::ENABLE_TRIANGLE));
             }
             0x4017 => {
                 self.interrupt_inhibit_flag =
@@ -140,7 +139,7 @@ impl Apu {
             95.88 / ((8128.0 / (pulse1 as f32 + pulse2 as f32)) + 100.0)
         };
 
-        let triangle: u8 = 0;
+        let triangle = self.triangle.next().unwrap();
         let noise: u8 = 0;
         let dmc: u8 = 0;
 
@@ -252,6 +251,7 @@ impl Apu {
 
         self.pulse1.tick(apu_tick);
         self.pulse2.tick(apu_tick);
+        self.triangle.tick(apu_tick);
 
         self.feed_blip();
 

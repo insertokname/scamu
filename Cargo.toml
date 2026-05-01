@@ -8,6 +8,7 @@ name = "scamu"
 crate-type = ["rlib", "staticlib", "dylib"]
 
 [dependencies]
+better_default = "1.0.5"
 blip_buf = "0.1.6"
 funty = "2.0.0"
 log = "0.4.28"

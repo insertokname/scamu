@@ -179,9 +179,19 @@ pub mod apu {
     }
 
     #[rustfmt::skip]
+    pub mod triangle_register0{
+        pub const COUNTER_RELOAD        : u8 = 0b01111111;
+        pub const LENGTH_COUNTER_HALT   : u8 = 0b10000000;
+        pub const CONTROL_FLAG          : u8 = 0b10000000;
+    }
+
+    #[rustfmt::skip]
     pub mod status_register{
         pub const ENABLE_PULSE1         : u8 = 0b00000001;
         pub const ENABLE_PULSE2         : u8 = 0b00000010;
+        pub const ENABLE_TRIANGLE       : u8 = 0b00000100;
+        pub const ENABLE_NOISE          : u8 = 0b00001000;
+        pub const ENABLE_DMC            : u8 = 0b00010000;
         pub const FRAME_INTERRUPT       : u8 = 0b01000000;
     }
 
@@ -196,6 +206,12 @@ pub mod apu {
         0b00000011, // 25%
         0b00001111, // 50%
         0b11111100, // 75%
+    ];
+
+    #[rustfmt::skip]
+    pub const TRIANGLE_WAVEFORMS: [u8; 32] = [
+        15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0, 
+        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
     ];
 
     /// this is the table: https://www.nesdev.org/wiki/APU_Length_Counter
