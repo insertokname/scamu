@@ -81,6 +81,8 @@ impl Nes {
             .reset_with_program_counter(program_counter);
     }
 
+    /// ticks 4 times faster than the real nes would
+    /// This means it should be clocked at a frequency of: [MASTER_CLOCK](crate::hardware::constants::clock_rates::MASTER_CLOCK)
     pub fn tick(&mut self) -> Option<(u32, u32, u8, u8)> {
         let out = self.ppu.borrow_mut().tick();
         if self.total_cycles % 3 == 0 {

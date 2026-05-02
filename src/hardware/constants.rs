@@ -18,9 +18,15 @@ macro_rules! byte_size {
 }
 
 pub mod clock_rates {
-    pub const MASTER_CLOCK: u64 = 21_477_272;
-    pub const CPU_CLOCK: u64 = MASTER_CLOCK / 12;
-    pub const SAMPLE_RATE: u64 = 44_100;
+    /// Just here as a refference. The original master clock frequency
+    /// of the nes. See [MASTER_CLOCK].
+    pub const ORIGINAL_MASTER_CLOCK: u64 = 21_477_272;
+    /// The frequency that should actually be used for ticking the nes.
+    /// Since [Nes::tick](crate::devices::nes::Nes::tick) does 4 ticks
+    /// at a time instead of 1.
+    pub const MASTER_CLOCK: u64 = ORIGINAL_MASTER_CLOCK / 4;
+    pub const CPU_CLOCK: u64 = MASTER_CLOCK / 3;
+    pub const APU_SAMPLE_RATE: u64 = 44_100;
 }
 
 pub mod controller {
@@ -221,9 +227,7 @@ pub mod apu {
         12, 16 , 24, 18, 48, 20, 96, 22, 192, 24, 72, 26, 16, 28, 32, 30,
     ];
 
-    pub const BLIP_FRAME_SIZE: u32 = 800;
-    pub const BLIP_BUFFER_SIZE: u32 = 1024;
-    pub const BLIP_SCALE: f32 = 32_767.0;
+    pub const SAMPLE_QUEUE_SIZE: usize = 2048;
 }
 
 // #[rustfmt::skip]

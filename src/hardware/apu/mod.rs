@@ -1,6 +1,6 @@
 use std::{cell::RefCell, collections::VecDeque, rc::Rc};
 
-use blip_buf::BlipBuf;
+use better_default::Default;
 
 use crate::hardware::{
     apu::{
@@ -9,10 +9,8 @@ use crate::hardware::{
     },
     bit_ops::BitOps,
     constants::{
-        apu::{
-            BLIP_BUFFER_SIZE, BLIP_FRAME_SIZE, BLIP_SCALE, frame_counter_register, status_register,
-        },
-        clock_rates::{CPU_CLOCK, SAMPLE_RATE},
+        apu::{SAMPLE_QUEUE_SIZE, frame_counter_register, status_register},
+        clock_rates::{APU_SAMPLE_RATE, CPU_CLOCK},
     },
     cpu::Cpu,
 };
@@ -31,8 +29,24 @@ pub struct ApuTick {
 }
 
 /// https://www.nesdev.org/wiki/APU
+#[derive(Default, Debug, Clone)]
 pub struct Apu {
+    /// If you are not using the default [MASTER_CLOCK](crate::hardware::constants::clock_rates::MASTER_CLOCK)
+    /// value to tick the emulator, you should set this to your custom
+    /// frequency you are ticking the nes at divided by 3 (the cpu runs
+    /// 3 times slower than the nes clock). 
+    /// 
+    /// Default value is: [CPU_CLOCK] (which is just MASTER_CLOCK / 3)
+    #[default(CPU_CLOCK)]
+    pub cpu_clock_frequency: u64,
+    /// Set this if you are using a custom sample rate. By default it
+    /// is set to: [APU_SAMPLE_RATE]
+    #[default(APU_SAMPLE_RATE)]
+    pub apu_sample_rate: u64,
+
+    #[default(PulseChannel::new(PulseChannelType::Pulse1))]
     pulse1: PulseChannel,
+    #[default(PulseChannel::new(PulseChannelType::Pulse2))]
     pulse2: PulseChannel,
     triangle: TriangleChannel,
 
@@ -44,33 +58,16 @@ pub struct Apu {
     apu_total_cycles: usize,
     new_mode_flag: bool,
     new_mode_flag_cycle: usize,
-
-    blip: BlipBuf,
-    blip_clock: u32,
-    prev_blip_output: i32,
+    sampled_sound_total: f32,
+    collected_samples: u32,
+    sample_timer: f32,
+    #[default(VecDeque::with_capacity(SAMPLE_QUEUE_SIZE))]
     sample_queue: VecDeque<f32>,
 }
 
 impl Apu {
     pub fn new() -> Self {
-        let mut blip = BlipBuf::new(BLIP_BUFFER_SIZE);
-        blip.set_rates(CPU_CLOCK as f64, SAMPLE_RATE as f64);
-        Self {
-            pulse1: PulseChannel::new(PulseChannelType::Pulse1),
-            pulse2: PulseChannel::new(PulseChannelType::Pulse2),
-            triangle: TriangleChannel::default(),
-            sequencer_mode_flag: false,
-            interrupt_inhibit_flag: false,
-            frame_interrupt_flag: false,
-            cpu_total_cycles: 0,
-            apu_total_cycles: 0,
-            new_mode_flag: false,
-            new_mode_flag_cycle: 0,
-            blip,
-            blip_clock: 0,
-            prev_blip_output: 0,
-            sample_queue: VecDeque::with_capacity(BLIP_BUFFER_SIZE as usize),
-        }
+        Default::default()
     }
 
     pub fn connect_cpu(&mut self, _cpu: Rc<RefCell<Cpu>>) {}
@@ -157,39 +154,6 @@ impl Apu {
         pulse_out + tnd_out
     }
 
-    fn feed_blip(&mut self) {
-        let output_i32 = (self.mix() * BLIP_SCALE) as i32;
-        let delta = output_i32 - self.prev_blip_output;
-
-        if delta != 0 {
-            self.blip.add_delta(self.blip_clock, delta);
-            self.prev_blip_output = output_i32;
-        }
-
-        self.blip_clock += 1;
-
-        if self.blip_clock >= BLIP_FRAME_SIZE {
-            self.drain_blip();
-        }
-    }
-
-    fn drain_blip(&mut self) {
-        self.blip.end_frame(self.blip_clock);
-        self.blip_clock = 0;
-
-        let count = self.blip.samples_avail() as usize;
-        if count == 0 {
-            return;
-        }
-
-        let mut buf = vec![0i16; count];
-        self.blip.read_samples(&mut buf, false);
-
-        for s in buf {
-            self.sample_queue.push_back(s as f32 / BLIP_SCALE);
-        }
-    }
-
     pub fn tick(&mut self) {
         let is_apu_cycle = self.cpu_total_cycles % 2 == 0;
         let mut immediate_frame_clock = false;
@@ -253,7 +217,25 @@ impl Apu {
         self.pulse2.tick(apu_tick);
         self.triangle.tick(apu_tick);
 
-        self.feed_blip();
+        self.sampled_sound_total += self.mix();
+        self.collected_samples += 1;
+        self.sample_timer += 1.0;
+
+        let cycles_per_sample = self.cpu_clock_frequency as f32 / self.apu_sample_rate as f32;
+
+        if self.sample_timer >= cycles_per_sample {
+            self.sample_timer -= cycles_per_sample;
+
+            let out = self.sampled_sound_total / self.collected_samples as f32;
+
+            if self.sample_queue.len() >= SAMPLE_QUEUE_SIZE {
+                self.sample_queue.pop_front();
+            }
+            self.sample_queue.push_back(out);
+
+            self.sampled_sound_total = 0.0;
+            self.collected_samples = 0;
+        }
 
         self.cpu_total_cycles += 1;
     }
