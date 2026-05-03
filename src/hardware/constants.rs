@@ -227,7 +227,7 @@ pub mod apu {
         12, 16 , 24, 18, 48, 20, 96, 22, 192, 24, 72, 26, 16, 28, 32, 30,
     ];
 
-    pub const SAMPLE_QUEUE_SIZE: usize = 2048;
+    pub const SAMPLE_QUEUE_SIZE: usize = 2048 * 4;
 }
 
 // #[rustfmt::skip]
